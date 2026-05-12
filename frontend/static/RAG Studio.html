@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>RAG Studio — Pipeline</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0d12;
+    --bg-1: #0f1218;
+    --bg-2: #11141b;
+    --bg-3: #161a23;
+    --bg-hover: #181c26;
+    --line: #1d212c;
+    --line-2: #262b38;
+    --fg: #e6e8ee;
+    --fg-2: #b4b8c4;
+    --fg-3: #7a8090;
+    --fg-4: #525866;
+    --accent: #4dd0c1;
+    --accent-dim: #1f3b3b;
+    --accent-faint: rgba(77, 208, 193, 0.08);
+    --green: #5bd07f;
+    --yellow: #e6c64a;
+    --red: #e5707a;
+    --purple: #a78bfa;
+    --blue: #6aa6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "ss02", "cv11";
+  }
+  .mono { font-family: 'Geist Mono', ui-monospace, monospace; font-feature-settings: "ss01", "ss02"; }
+  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+  #root { min-height: 100vh; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+/* ---------- icons (stroke, 16px) ---------- */
+const Icon = ({ name, size = 16 }) => {
+  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" };
+  const paths = {
+    pipeline: <><circle cx="5" cy="12" r="2.2"/><circle cx="19" cy="6" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M7 11l10-4M7 13l10 4"/></>,
+    chat: <><path d="M4 5h16v11H9l-4 4V5z"/></>,
+    retrieval: <><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></>,
+    eval: <><path d="M4 19V5M4 19h16"/><rect x="7" y="11" width="3" height="8"/><rect x="12" y="7" width="3" height="12"/><rect x="17" y="14" width="3" height="5"/></>,
+    docs: <><path d="M6 4h9l3 3v13H6z"/><path d="M15 4v3h3M9 11h6M9 14h6M9 17h4"/></>,
+    play: <><path d="M7 5l12 7-12 7V5z" fill="currentColor" stroke="none"/></>,
+    settings: <><circle cx="12" cy="12" r="2.5"/><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></>,
+    refresh: <><path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/></>,
+    chevron: <><path d="M9 6l6 6-6 6"/></>,
+    source: <><path d="M4 7h16v12H4z"/><path d="M4 10h16"/><circle cx="7" cy="8.5" r="0.4" fill="currentColor"/><circle cx="9" cy="8.5" r="0.4" fill="currentColor"/></>,
+    chunk: <><rect x="3" y="4" width="7" height="7"/><rect x="14" y="4" width="7" height="7"/><rect x="3" y="13" width="7" height="7"/><rect x="14" y="13" width="7" height="7"/></>,
+    embed: <><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6 6l12 12M18 6L6 18" opacity="0.5"/></>,
+    db: <><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6"/><path d="M5 12v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/></>,
+    dot: <><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></>,
+    plus: <><path d="M12 5v14M5 12h14"/></>,
+    more: <><circle cx="6" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1" fill="currentColor" stroke="none"/></>,
+    cmd: <><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6z"/></>,
+    branch: <><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M8 5h4a4 4 0 0 1 4 4v1"/></>,
+    clock: <><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></>,
+  };
+  return <svg {...props}>{paths[name]}</svg>;
+};
+
+/* ---------- sidebar ---------- */
+const NAV = [
+  { id: "pipeline", label: "Pipeline", icon: "pipeline" },
+  { id: "chat", label: "Chat", icon: "chat" },
+  { id: "retrieval", label: "Retrieval", icon: "retrieval" },
+  { id: "evaluation", label: "Evaluation", icon: "eval" },
+  { id: "docs", label: "Docs", icon: "docs" },
+];
+
+function Sidebar({ active, setActive }) {
+  return (
+    <aside style={{
+      width: 232, borderRight: "1px solid var(--line)", background: "var(--bg-1)",
+      display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", position: "sticky", top: 0
+    }}>
+      {/* Logo */}
+      <div style={{ padding: "20px 20px 22px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 5, background: "var(--accent)",
+          display: "grid", placeItems: "center", color: "#08221f", fontWeight: 700,
+          fontFamily: "'Geist Mono'", fontSize: 12
+        }}>R</div>
+        <div style={{ fontWeight: 600, letterSpacing: -0.1, fontSize: 13.5 }}>RAG Studio</div>
+        <div style={{ marginLeft: "auto", color: "var(--fg-4)" }}>
+          <Icon name="chevron" size={14} />
+        </div>
+      </div>
+
+      {/* Workspace */}
+      <div style={{ padding: "0 12px 14px" }}>
+        <div style={{
+          padding: "8px 10px", borderRadius: 6, background: "var(--bg-2)", border: "1px solid var(--line)",
+          display: "flex", alignItems: "center", gap: 8
+        }}>
+          <div style={{ width: 18, height: 18, borderRadius: 4, background: "#2a2333", display: "grid", placeItems: "center", color: "var(--purple)", fontSize: 10, fontWeight: 600 }}>AC</div>
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.2 }}>acme-docs</div>
+            <div style={{ fontSize: 10.5, color: "var(--fg-3)", lineHeight: 1.2 }} className="mono">prod</div>
+          </div>
+          <div style={{ marginLeft: "auto", color: "var(--fg-4)" }}>
+            <Icon name="chevron" size={12} />
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav style={{ padding: "0 8px", display: "flex", flexDirection: "column", gap: 1 }}>
+        <div style={{ fontSize: 10.5, color: "var(--fg-4)", padding: "8px 12px 4px", letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500 }}>
+          Workspace
+        </div>
+        {NAV.map(item => {
+          const isActive = active === item.id;
+          return (
+            <button key={item.id} onClick={() => setActive(item.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "7px 12px",
+                borderRadius: 6, color: isActive ? "var(--fg)" : "var(--fg-2)",
+                background: isActive ? "var(--bg-3)" : "transparent",
+                fontSize: 13, fontWeight: isActive ? 500 : 400,
+                position: "relative", textAlign: "left",
+              }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
+              {isActive && <div style={{ position: "absolute", left: -8, top: 8, bottom: 8, width: 2, background: "var(--accent)", borderRadius: 2 }}/>}
+              <span style={{ color: isActive ? "var(--accent)" : "var(--fg-3)" }}>
+                <Icon name={item.icon} />
+              </span>
+              <span>{item.label}</span>
+              {item.id === "chat" && (
+                <span className="mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--fg-4)", border: "1px solid var(--line-2)", padding: "1px 5px", borderRadius: 3 }}>3</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Pipelines list (contextual) */}
+      <div style={{ padding: "20px 8px 0" }}>
+        <div style={{ fontSize: 10.5, color: "var(--fg-4)", padding: "0 12px 6px", letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500, display: "flex", alignItems: "center" }}>
+          Pipelines
+          <button style={{ marginLeft: "auto", color: "var(--fg-4)" }}><Icon name="plus" size={12} /></button>
+        </div>
+        {[
+          { name: "support-kb", status: "green" },
+          { name: "internal-wiki", status: "green" },
+          { name: "product-docs", status: "yellow", active: true },
+          { name: "legacy-confluence", status: "fg-4" },
+        ].map(p => (
+          <button key={p.name} style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 6,
+            width: "100%", textAlign: "left", color: p.active ? "var(--fg)" : "var(--fg-2)",
+            background: p.active ? "var(--bg-2)" : "transparent", fontSize: 12.5,
+          }}>
+            <span style={{ color: `var(--${p.status})`, display: "flex" }}>
+              <Icon name="dot" size={8} />
+            </span>
+            <span className="mono" style={{ fontSize: 12 }}>{p.name}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ flex: 1 }} />
+
+      {/* Bottom */}
+      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, color: "var(--fg-3)" }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)" }} />
+        <span className="mono" style={{ fontSize: 11 }}>RAG v1</span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button style={{ color: "var(--fg-4)" }}><Icon name="settings" size={14} /></button>
+        </span>
+      </div>
+    </aside>
+  );
+}
+
+/* ---------- top header ---------- */
+function Header({ title }) {
+  return (
+    <header style={{
+      borderBottom: "1px solid var(--line)", padding: "0 32px", height: 56,
+      display: "flex", alignItems: "center", gap: 16, background: "var(--bg)", position: "sticky", top: 0, zIndex: 5
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--fg-3)", fontSize: 12.5 }}>
+        <span className="mono">acme-docs</span>
+        <span style={{ color: "var(--fg-4)" }}>/</span>
+        <span style={{ color: "var(--fg)", fontWeight: 500 }}>{title}</span>
+        <span style={{ color: "var(--fg-4)" }}>/</span>
+        <span className="mono">product-docs</span>
+      </div>
+
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "5px 10px",
+          border: "1px solid var(--line)", borderRadius: 6, background: "var(--bg-2)",
+          color: "var(--fg-3)", fontSize: 12, minWidth: 220
+        }}>
+          <Icon name="retrieval" size={13} />
+          <span>Search pipelines, runs, chunks…</span>
+          <span className="mono" style={{ marginLeft: "auto", fontSize: 10.5, border: "1px solid var(--line-2)", padding: "0 5px", borderRadius: 3 }}>⌘K</span>
+        </div>
+        <button style={{
+          display: "flex", alignItems: "center", gap: 6, padding: "6px 10px",
+          border: "1px solid var(--line)", borderRadius: 6, color: "var(--fg-2)", fontSize: 12
+        }}>
+          <Icon name="branch" size={13} />
+          <span className="mono">main</span>
+        </button>
+        <button style={{
+          display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
+          background: "var(--accent)", color: "#08221f", borderRadius: 6, fontSize: 12, fontWeight: 600
+        }}>
+          <Icon name="play" size={11} />
+          <span>Run pipeline</span>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/* ---------- pipeline stage card ---------- */
+function StageCard({ stage }) {
+  const statusColor = { ready: "var(--green)", processing: "var(--yellow)", idle: "var(--fg-4)" }[stage.status];
+  return (
+    <div style={{
+      width: 248, background: "var(--bg-2)", border: "1px solid var(--line)", borderRadius: 8,
+      display: "flex", flexDirection: "column", overflow: "hidden",
+    }}>
+      {/* head */}
+      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: 6, background: "var(--bg-3)",
+          border: "1px solid var(--line-2)", display: "grid", placeItems: "center", color: "var(--accent)"
+        }}>
+          <Icon name={stage.icon} size={14} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500 }}>{stage.kind}</div>
+          <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.2 }}>{stage.name}</div>
+        </div>
+        <button style={{ marginLeft: "auto", color: "var(--fg-4)" }}><Icon name="more" size={14} /></button>
+      </div>
+
+      {/* config */}
+      <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {stage.config.map(([k, v, type]) => (
+          <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+            <span style={{ color: "var(--fg-3)" }} className="mono">{k}</span>
+            <span className="mono" style={{
+              color: type === "accent" ? "var(--accent)" : type === "muted" ? "var(--fg-3)" : "var(--fg)",
+              fontSize: 12,
+            }}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* footer */}
+      <div style={{ padding: "9px 14px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8, background: "var(--bg-1)" }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, boxShadow: stage.status === "processing" ? "0 0 0 3px rgba(230,198,74,0.12)" : "none" }} />
+        <span style={{ fontSize: 11.5, color: "var(--fg-2)", textTransform: "capitalize" }}>{stage.status}</span>
+        <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--fg-3)" }}>{stage.meta}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- arrow between stages ---------- */
+function Arrow({ active }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", flexShrink: 0, height: 248 }}>
+      <svg width="44" height="14" viewBox="0 0 44 14" fill="none">
+        <path d="M0 7 H38" stroke={active ? "var(--accent)" : "var(--line-2)"} strokeWidth="1.2" strokeDasharray={active ? "0" : "3 3"} />
+        <path d="M34 2 L42 7 L34 12" stroke={active ? "var(--accent)" : "var(--line-2)"} strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+/* ---------- pipeline page ---------- */
+const STAGES = [
+  {
+    id: "source", kind: "Source", name: "GitHub: acme/docs", icon: "source", status: "ready", meta: "synced 4m ago",
+    config: [
+      ["type", "github", "muted"],
+      ["branch", "main"],
+      ["paths", "/docs/**"],
+      ["files", "1,284"],
+    ],
+  },
+  {
+    id: "chunker", kind: "Chunker", name: "Recursive", icon: "chunk", status: "ready", meta: "8.2k chunks",
+    config: [
+      ["strategy", "recursive", "muted"],
+      ["chunk_size", "512", "accent"],
+      ["overlap", "64", "accent"],
+      ["separator", "\\n\\n"],
+    ],
+  },
+  {
+    id: "embedder", kind: "Embedder", name: "OpenAI 3-large", icon: "embed", status: "processing", meta: "6.1k / 8.2k",
+    config: [
+      ["model", "te-3-large", "muted"],
+      ["dim", "3072", "accent"],
+      ["batch", "100"],
+      ["tokens", "1.2M"],
+    ],
+  },
+  {
+    id: "store", kind: "Vector DB", name: "Qdrant", icon: "db", status: "ready", meta: "collection: prod",
+    config: [
+      ["provider", "qdrant", "muted"],
+      ["metric", "cosine"],
+      ["vectors", "847,213"],
+      ["index", "HNSW"],
+    ],
+  },
+];
+
+function Pipeline() {
+  return (
+    <div style={{ padding: "28px 32px 60px", maxWidth: 1240 }}>
+      {/* Page title + summary row */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 32 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Pipeline</h1>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 8px",
+              border: "1px solid var(--line-2)", borderRadius: 999, fontSize: 11, color: "var(--yellow)"
+            }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--yellow)" }} />
+              Processing
+            </span>
+          </div>
+          <div style={{ color: "var(--fg-3)", fontSize: 13 }}>
+            Define how documents flow from source to vector store. Changes apply on next run.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 24, paddingTop: 4 }}>
+          {[
+            ["Documents", "1,284", null],
+            ["Chunks", "8,213", null],
+            ["Vectors", "847,213", null],
+            ["Last run", "4m ago", "var(--fg-3)"],
+          ].map(([k, v, c]) => (
+            <div key={k} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 84 }}>
+              <div style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500 }}>{k}</div>
+              <div className="mono" style={{ fontSize: 18, fontWeight: 500, color: c || "var(--fg)", letterSpacing: -0.3 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Flow diagram */}
+      <div style={{
+        border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)",
+        padding: "32px 28px", marginBottom: 24, overflowX: "auto",
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "flex-start",
+          gap: 0, minWidth: "fit-content"
+        }}>
+          {STAGES.map((s, i) => (
+            <React.Fragment key={s.id}>
+              <StageCard stage={s} />
+              {i < STAGES.length - 1 && <Arrow active={i < 2} />}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Token flow legend */}
+        <div style={{
+          marginTop: 28, paddingTop: 20, borderTop: "1px dashed var(--line)",
+          display: "flex", alignItems: "center", gap: 32, fontSize: 11.5, color: "var(--fg-3)"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 18, height: 1.5, background: "var(--accent)" }} />
+            <span>Active flow</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 18, height: 1.5, backgroundImage: "linear-gradient(to right, var(--line-2) 50%, transparent 0)", backgroundSize: "6px 1.5px", backgroundRepeat: "repeat-x" }} />
+            <span>Pending</span>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+            <span className="mono">throughput: <span style={{ color: "var(--fg)" }}>412 chunks/s</span></span>
+            <span className="mono">cost: <span style={{ color: "var(--fg)" }}>$0.018 / 1k</span></span>
+          </div>
+        </div>
+      </div>
+
+      {/* Two-column bottom: Runs + Recent chunks */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 20 }}>
+        <RunsPanel />
+        <SamplePanel />
+      </div>
+    </div>
+  );
+}
+
+function RunsPanel() {
+  const runs = [
+    { id: "run_8aQ2", status: "processing", branch: "main", commit: "a4f21c9", dur: "—", chunks: "6,103", time: "running", who: "ci-bot" },
+    { id: "run_8aPx", status: "ready",      branch: "main", commit: "7be902d", dur: "3m 24s", chunks: "8,213", time: "4m ago", who: "ci-bot" },
+    { id: "run_8aPm", status: "ready",      branch: "main", commit: "1f0c4a8", dur: "3m 19s", chunks: "8,201", time: "1h ago", who: "j.kim" },
+    { id: "run_8aPj", status: "failed",     branch: "feat/openai-v3", commit: "9d3a7b2", dur: "0m 42s", chunks: "—", time: "3h ago", who: "l.tran" },
+    { id: "run_8aPg", status: "ready",      branch: "main", commit: "c4e8a01", dur: "3m 12s", chunks: "8,176", time: "yesterday", who: "ci-bot" },
+  ];
+  const statusColor = { ready: "var(--green)", processing: "var(--yellow)", failed: "var(--red)" };
+
+  return (
+    <section style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Recent runs</div>
+        <button style={{ marginLeft: "auto", color: "var(--fg-3)", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+          View all <Icon name="chevron" size={12} />
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "auto auto 1fr auto auto", padding: "0 16px", fontSize: 11, color: "var(--fg-4)", borderBottom: "1px solid var(--line)", height: 32, alignItems: "center", columnGap: 16, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 500 }}>
+        <div>Run</div>
+        <div>Branch</div>
+        <div>Duration</div>
+        <div style={{ textAlign: "right" }}>Chunks</div>
+        <div style={{ textAlign: "right" }}>When</div>
+      </div>
+      {runs.map(r => (
+        <div key={r.id} style={{
+          display: "grid", gridTemplateColumns: "auto auto 1fr auto auto",
+          padding: "10px 16px", fontSize: 12.5, alignItems: "center",
+          borderBottom: "1px solid var(--line)", columnGap: 16
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor[r.status] }} />
+            <span className="mono" style={{ color: "var(--fg)" }}>{r.id}</span>
+          </div>
+          <div className="mono" style={{ color: "var(--fg-2)", fontSize: 12 }}>{r.branch}<span style={{ color: "var(--fg-4)" }}> @ {r.commit}</span></div>
+          <div className="mono" style={{ color: "var(--fg-3)" }}>{r.dur}</div>
+          <div className="mono" style={{ color: "var(--fg-2)", textAlign: "right" }}>{r.chunks}</div>
+          <div style={{ color: "var(--fg-3)", textAlign: "right", display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+            <span>{r.time}</span>
+            <span className="mono" style={{ color: "var(--fg-4)" }}>· {r.who}</span>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function SamplePanel() {
+  return (
+    <section style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Sample chunk</div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>chunk_0294 / 8213</span>
+          <button style={{ color: "var(--fg-3)" }}><Icon name="refresh" size={13} /></button>
+        </div>
+      </div>
+
+      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 11, color: "var(--fg-4)", marginBottom: 8, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500 }}>Text</div>
+        <div className="mono" style={{
+          fontSize: 12, color: "var(--fg-2)", background: "var(--bg-2)",
+          padding: "12px 14px", borderRadius: 6, border: "1px solid var(--line)",
+          lineHeight: 1.55, whiteSpace: "pre-wrap"
+        }}>
+{`# Authentication
+
+To authenticate requests, pass an API key in the
+Authorization header as \`Bearer <key>\`. Keys are
+scoped to a single workspace and can be rotated
+from the dashboard without invalidating sessions.`}
+        </div>
+      </div>
+
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+        {[
+          ["tokens", "127"],
+          ["chars", "612"],
+          ["source", "docs/api/auth.md"],
+          ["chunk_idx", "3 of 11"],
+        ].map(([k, v]) => (
+          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+            <span className="mono" style={{ color: "var(--fg-3)" }}>{k}</span>
+            <span className="mono" style={{ color: "var(--fg)" }}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ padding: "12px 16px" }}>
+        <div style={{ fontSize: 11, color: "var(--fg-4)", marginBottom: 8, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500, display: "flex", alignItems: "center" }}>
+          Embedding
+          <span className="mono" style={{ marginLeft: "auto", color: "var(--fg-3)", textTransform: "none", letterSpacing: 0 }}>float32 · dim 3072</span>
+        </div>
+        <div className="mono" style={{
+          fontSize: 11.5, color: "var(--fg-2)", background: "var(--bg-2)",
+          padding: "10px 12px", borderRadius: 6, border: "1px solid var(--line)",
+          lineHeight: 1.55, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+        }}>
+          [<span style={{ color: "var(--accent)" }}>0.0124</span>, <span style={{ color: "var(--accent)" }}>-0.0837</span>, <span style={{ color: "var(--accent)" }}>0.2104</span>, <span style={{ color: "var(--accent)" }}>-0.0461</span>, <span style={{ color: "var(--accent)" }}>0.1928</span>, <span style={{ color: "var(--accent)" }}>0.0742</span>, <span style={{ color: "var(--accent)" }}>-0.1503</span>, <span style={{ color: "var(--accent)" }}>0.0218</span>, <span style={{ color: "var(--fg-4)" }}>… 3064 more</span>]
+        </div>
+
+        {/* mini bar viz */}
+        <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 36, marginTop: 12 }}>
+          {Array.from({ length: 64 }).map((_, i) => {
+            const h = 6 + Math.abs(Math.sin(i * 0.71) + Math.cos(i * 0.31)) * 14;
+            return <div key={i} style={{
+              flex: 1, height: h, background: i % 7 === 0 ? "var(--accent)" : "var(--line-2)", opacity: 0.85, borderRadius: 1
+            }} />;
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- placeholder pages ---------- */
+function Placeholder({ name }) {
+  return (
+    <div style={{ padding: "28px 32px" }}>
+      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>{name}</h1>
+      <div style={{ color: "var(--fg-3)", marginTop: 6, fontSize: 13 }}>Coming soon.</div>
+      <div style={{
+        marginTop: 24, border: "1px dashed var(--line-2)", borderRadius: 10,
+        height: 320, display: "grid", placeItems: "center", color: "var(--fg-4)",
+        background: "var(--bg-1)"
+      }}>
+        <span className="mono" style={{ fontSize: 12 }}>{name.toLowerCase()}.tsx</span>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- app ---------- */
+function App() {
+  const [active, setActive] = useState("pipeline");
+  const title = useMemo(() => NAV.find(n => n.id === active).label, [active]);
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      <Sidebar active={active} setActive={setActive} />
+      <main style={{ flex: 1, minWidth: 0 }} data-screen-label={title}>
+        <Header title={title} />
+        {active === "pipeline" ? <Pipeline /> : <Placeholder name={title} />}
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+</script>
+</body>
+</html>
