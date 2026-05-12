@@ -1,11 +1,12 @@
 from pathlib import Path
 
-from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 from rag_v1 import config
+
 
 def format_context(docs: list) -> str:
     sections = []
@@ -26,10 +27,9 @@ Context:
 
 
 def build_rag_chain(retriever):
-    llm = ChatOpenAI(
-        base_url="http://127.0.0.1:1234/v1",
-        api_key="lm-studio",
-        model="deepseek/deepseek-r1-0528-qwen3-8b",
+    llm = ChatOllama(
+        base_url="http://ollama:11434",
+        model="qwen2.5:3b",
         temperature=0,
     )
 
@@ -48,20 +48,20 @@ def build_rag_chain(retriever):
         | StrOutputParser()
     )
 
-    print(f"RAG chain ready — LLM: deepseek/deepseek-r1-0528-qwen3-8b")
+    print(f"RAG chain ready — LLM: qwen2.5:3b via Ollama")
     return chain
+
 
 def ask(question: str, chain) -> str:
     print(f"\nQuestion: {question}")
     print("Generating answer...\n")
-
     answer = chain.invoke(question)
-
     print(f"Answer:\n{answer}")
     return answer
 
+
 if __name__ == "__main__":
-    from src.retrieval import load_vectorstore, build_retriever
+    from rag_v1.retrieval import load_vectorstore, build_retriever
 
     vectorstore = load_vectorstore()
     retriever   = build_retriever(vectorstore)
