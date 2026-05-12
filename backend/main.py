@@ -53,3 +53,21 @@ async def ingest(background_tasks: BackgroundTasks, file: UploadFile = File(...)
 @app.get("/api/ingest/status")
 async def ingest_status():
     return INGEST_STATUS
+
+
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    question: str
+
+@app.post("/api/chat")
+async def chat_api(req: ChatRequest):
+    from rag_v1.retrieval import load_vectorstore, build_retriever
+    from rag_v1.generation import build_rag_chain
+    
+    vectorstore = load_vectorstore()
+    retriever = build_retriever(vectorstore)
+    chain = build_rag_chain(retriever)
+    
+    answer = chain.invoke(req.question)
+    return {"answer": answer}
