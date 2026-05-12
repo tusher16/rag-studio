@@ -37,7 +37,16 @@
   }
   .mono { font-family: 'Geist Mono', ui-monospace, monospace; font-feature-settings: "ss01", "ss02"; }
   button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+  textarea { font: inherit; color: inherit; background: none; border: none; outline: none; resize: none; }
   #root { min-height: 100vh; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.25 } 40% { opacity: 1 } }
+  .dot-1 { animation: blink 1.2s infinite both; }
+  .dot-2 { animation: blink 1.2s infinite both; animation-delay: 0.16s; }
+  .dot-3 { animation: blink 1.2s infinite both; animation-delay: 0.32s; }
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #1f2330; border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
 </style>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
@@ -531,6 +540,1483 @@ from the dashboard without invalidating sessions.`}
   );
 }
 
+/* ---------- chat ---------- */
+const SUGGESTIONS = [
+  { q: "How do I authenticate API requests?", hint: "docs/api/auth.md" },
+  { q: "What chunking strategies are supported?", hint: "docs/pipelines/chunking.md" },
+  { q: "Rate limits on the embeddings endpoint", hint: "docs/api/limits.md" },
+  { q: "How does HNSW indexing work in Qdrant?", hint: "docs/storage/qdrant.md" },
+];
+
+const ANSWERS = {
+  default: {
+    text: `Pass your API key in the \`Authorization\` header as \`Bearer <key>\`. Keys are scoped to a single workspace and can be rotated from Settings → API keys without invalidating active sessions.
+
+For server-side calls, load the key from an environment variable. For browsers, mint a short-lived JWT via \`POST /v1/auth/token\` and use that instead — never expose long-lived keys to a client.
+
+Failed auth returns \`401 Unauthorized\` with \`{"error":"invalid_key"}\`; expired tokens return \`401 token_expired\` so clients can refresh.`,
+    citations: [
+      { file: "docs/api/auth.md",       chunk: "chunk_0294", score: 0.847, page: "§ 2.1" },
+      { file: "docs/api/auth.md",       chunk: "chunk_0295", score: 0.812, page: "§ 2.3" },
+      { file: "docs/security/secrets.md", chunk: "chunk_0118", score: 0.741, page: "§ 1.2" },
+      { file: "docs/api/errors.md",     chunk: "chunk_0402", score: 0.689, page: "§ 4"   },
+    ],
+  },
+};
+
+function CitationCard({ c, idx }) {
+  return (
+    <div style={{
+      flex: "0 0 260px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--bg-2)",
+      padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-4)", border: "1px solid var(--line-2)", borderRadius: 3, padding: "0 4px" }}>
+          {idx + 1}
+        </span>
+        <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
+          {c.file}
+        </span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+        <span className="mono" style={{ color: "var(--fg-3)" }}>{c.page} · {c.chunk}</span>
+        <span className="mono" style={{ color: "var(--accent)" }}>{c.score.toFixed(3)}</span>
+      </div>
+      {/* similarity bar */}
+      <div style={{ height: 2, background: "var(--line)", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${c.score * 100}%`, background: "var(--accent)" }} />
+      </div>
+    </div>
+  );
+}
+
+/* simple markdown-ish: backticks → mono spans, paragraphs split on \n\n */
+function renderText(text) {
+  return text.split(/\n\n+/).map((para, i) => {
+    const parts = para.split(/(`[^`]+`)/g);
+    return (
+      <p key={i} style={{ margin: i === 0 ? "0 0 12px" : "0 0 12px", lineHeight: 1.65, color: "var(--fg)" }}>
+        {parts.map((p, j) =>
+          p.startsWith("`") && p.endsWith("`")
+            ? <span key={j} className="mono" style={{
+                fontSize: "92%", background: "var(--bg-3)", padding: "1px 5px",
+                borderRadius: 4, border: "1px solid var(--line)", color: "var(--accent)"
+              }}>{p.slice(1, -1)}</span>
+            : <React.Fragment key={j}>{p}</React.Fragment>
+        )}
+      </p>
+    );
+  });
+}
+
+function AssistantAvatar() {
+  return (
+    <div style={{
+      width: 26, height: 26, borderRadius: 6, background: "var(--accent)",
+      color: "#08221f", display: "grid", placeItems: "center", fontWeight: 700,
+      fontFamily: "'Geist Mono'", fontSize: 12, flexShrink: 0,
+    }}>R</div>
+  );
+}
+
+function UserMessage({ text }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+      <div style={{
+        maxWidth: "72%", background: "var(--bg-2)", border: "1px solid var(--line)",
+        padding: "10px 14px", borderRadius: 10, fontSize: 14, lineHeight: 1.55, color: "var(--fg)"
+      }}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessage({ msg }) {
+  return (
+    <div style={{ display: "flex", gap: 14, marginBottom: 28 }}>
+      <AssistantAvatar />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>RAG Studio</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>· gpt-4o · 1.4s · 4 sources</span>
+        </div>
+        <div style={{ fontSize: 14 }}>{renderText(msg.text)}</div>
+
+        {/* citations */}
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500, marginBottom: 8 }}>
+            Sources
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {msg.citations.map((c, i) => <CitationCard key={i} c={c} idx={i} />)}
+          </div>
+        </div>
+
+        {/* feedback row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14, fontSize: 11.5, color: "var(--fg-4)" }}>
+          <button style={{ color: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M7 10v10H4V10zM7 10l5-7c1.5 0 2.5 1 2.5 2.5V9h5c1.5 0 2.5 1 2.2 2.5l-1.6 7c-.3 1-1.2 1.5-2.2 1.5H7"/></svg>
+            Helpful
+          </button>
+          <button style={{ color: "inherit" }}>Not helpful</button>
+          <button style={{ color: "inherit" }}>Copy</button>
+          <button style={{ color: "inherit", marginLeft: "auto" }} className="mono">view trace ↗</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <div style={{ display: "flex", gap: 14, marginBottom: 28 }}>
+      <AssistantAvatar />
+      <div style={{ flex: 1, paddingTop: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--fg-3)", fontSize: 12.5 }}>
+          <span style={{ display: "inline-flex", gap: 4 }}>
+            <span className="dot-1" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)" }} />
+            <span className="dot-2" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)" }} />
+            <span className="dot-3" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)" }} />
+          </span>
+          <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-4)" }}>retrieving · embedding query · top_k=4 · reranking</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onPick }) {
+  return (
+    <div style={{
+      flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      padding: "0 32px 80px", textAlign: "center",
+    }}>
+      <div style={{
+        width: 44, height: 44, borderRadius: 10, background: "var(--bg-2)",
+        border: "1px solid var(--line)", display: "grid", placeItems: "center",
+        color: "var(--accent)", marginBottom: 18
+      }}>
+        <Icon name="chat" size={20} />
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: -0.3, marginBottom: 6 }}>
+        Ask a question about your documents
+      </div>
+      <div style={{ color: "var(--fg-3)", fontSize: 13, maxWidth: 460, marginBottom: 28 }}>
+        Queries are answered using the <span className="mono" style={{ color: "var(--fg-2)" }}>product-docs</span> pipeline.
+        Responses include source citations from the indexed corpus.
+      </div>
+
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8,
+        width: "100%", maxWidth: 560,
+      }}>
+        {SUGGESTIONS.map((s, i) => (
+          <button key={i} onClick={() => onPick(s.q)}
+            style={{
+              textAlign: "left", padding: "12px 14px", border: "1px solid var(--line)",
+              borderRadius: 8, background: "var(--bg-1)", color: "var(--fg-2)",
+              display: "flex", flexDirection: "column", gap: 4,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-2)"; e.currentTarget.style.borderColor = "var(--line-2)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "var(--bg-1)"; e.currentTarget.style.borderColor = "var(--line)"; }}>
+            <span style={{ fontSize: 13, color: "var(--fg)" }}>{s.q}</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>{s.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 28, display: "flex", gap: 18, fontSize: 11.5, color: "var(--fg-4)" }}>
+        <span className="mono">top_k = 4</span>
+        <span className="mono">model = gpt-4o</span>
+        <span className="mono">rerank = cohere-v3</span>
+      </div>
+    </div>
+  );
+}
+
+function ChatInput({ onSend }) {
+  const [val, setVal] = useState("");
+  const taRef = React.useRef(null);
+
+  const submit = () => {
+    if (!val.trim()) return;
+    onSend(val.trim());
+    setVal("");
+    if (taRef.current) taRef.current.style.height = "auto";
+  };
+
+  const onKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+  const autoGrow = (e) => {
+    setVal(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
+  };
+
+  return (
+    <div style={{ padding: "12px 32px 20px", borderTop: "1px solid var(--line)", background: "var(--bg)" }}>
+      <div style={{ maxWidth: 820, margin: "0 auto" }}>
+        <div style={{
+          border: "1px solid var(--line-2)", background: "var(--bg-1)", borderRadius: 10,
+          padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <textarea
+            ref={taRef}
+            value={val}
+            onChange={autoGrow}
+            onKeyDown={onKey}
+            rows={1}
+            placeholder="Ask anything about your indexed documents…"
+            style={{ width: "100%", fontSize: 14, color: "var(--fg)", minHeight: 22, lineHeight: 1.5, padding: "2px 0" }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+              border: "1px solid var(--line)", borderRadius: 5, color: "var(--fg-2)", fontSize: 11.5
+            }}>
+              <span style={{ color: "var(--fg-3)" }} className="mono">model:</span>
+              <span className="mono">gpt-4o</span>
+              <Icon name="chevron" size={11} />
+            </button>
+            <button style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+              border: "1px solid var(--line)", borderRadius: 5, color: "var(--fg-2)", fontSize: 11.5
+            }}>
+              <span style={{ color: "var(--fg-3)" }} className="mono">top_k:</span>
+              <span className="mono">4</span>
+            </button>
+            <button style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+              border: "1px solid var(--line)", borderRadius: 5, color: "var(--fg-2)", fontSize: 11.5
+            }}>
+              <span style={{ color: "var(--fg-3)" }} className="mono">filters:</span>
+              <span className="mono">none</span>
+            </button>
+
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>
+                <span style={{ border: "1px solid var(--line-2)", padding: "0 5px", borderRadius: 3 }}>↵</span> send · <span style={{ border: "1px solid var(--line-2)", padding: "0 5px", borderRadius: 3 }}>⇧↵</span> newline
+              </span>
+              <button onClick={submit} disabled={!val.trim()} style={{
+                display: "flex", alignItems: "center", gap: 6, padding: "5px 12px",
+                background: val.trim() ? "var(--accent)" : "var(--bg-3)",
+                color: val.trim() ? "#08221f" : "var(--fg-4)",
+                borderRadius: 6, fontSize: 12.5, fontWeight: 600,
+                cursor: val.trim() ? "pointer" : "not-allowed",
+              }}>
+                Send
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Chat() {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const scrollRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages.length, loading]);
+
+  const send = (text) => {
+    setMessages(m => [...m, { role: "user", text }]);
+    setLoading(true);
+    setTimeout(() => {
+      setMessages(m => [...m, { role: "assistant", ...ANSWERS.default }]);
+      setLoading(false);
+    }, 1500);
+  };
+
+  const isEmpty = messages.length === 0 && !loading;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      {isEmpty ? (
+        <EmptyState onPick={send} />
+      ) : (
+        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "28px 0 12px" }}>
+          <div style={{ maxWidth: 820, margin: "0 auto", padding: "0 32px" }}>
+            {messages.map((m, i) =>
+              m.role === "user"
+                ? <UserMessage key={i} text={m.text} />
+                : <AssistantMessage key={i} msg={m} />
+            )}
+            {loading && <TypingIndicator />}
+          </div>
+        </div>
+      )}
+      <ChatInput onSend={send} />
+    </div>
+  );
+}
+
+/* ---------- retrieval ---------- */
+const CORPUS = [
+  {
+    rank: 1, file: "docs/storage/qdrant.md", chunk: "chunk_0731", page: "§ 3.1",
+    tokens: 184, chars: 912, mmr: 0.892, rerank: 0.941, neighbors: ["chunk_0730", "chunk_0732"],
+    text: `HNSW (Hierarchical Navigable Small World) is the default approximate nearest-neighbor index used by Qdrant for high-dimensional vector search. It builds a multi-layer graph where each node connects to a bounded number of neighbors, with the upper layers acting as a long-range routing structure and the lowest layer containing every vector in the collection.
+
+Searches start at the top layer from a fixed entry point and greedily descend layer by layer, refining the candidate set at each step until the bottom layer is reached. This gives logarithmic search complexity in practice while keeping recall close to exact KNN.
+
+Two parameters dominate the trade-off: \`M\` (max connections per node) controls graph quality and memory; \`ef_construct\` controls build-time accuracy. At query time, \`ef\` is the dynamic candidate list size — raise it to trade latency for recall.`,
+  },
+  {
+    rank: 2, file: "docs/storage/qdrant.md", chunk: "chunk_0732", page: "§ 3.2",
+    tokens: 156, chars: 781, mmr: 0.871, rerank: 0.918, neighbors: ["chunk_0731", "chunk_0733"],
+    text: `Recommended HNSW defaults for production workloads under 10M vectors: \`M=16\`, \`ef_construct=128\`, \`ef=64\` at query time. Bumping \`ef\` to 128–256 typically improves recall@10 by 1–3 points at roughly 2× query latency.
+
+For workloads above 50M vectors, prefer \`M=32\` and \`ef_construct=256\` — the higher graph degree pays off in recall, and the one-time build cost is amortized over millions of queries.
+
+If you observe recall drift after large upserts, schedule an \`optimize\` operation. Qdrant supports online optimization without blocking reads.`,
+  },
+  {
+    rank: 3, file: "docs/pipelines/vectordb.md", chunk: "chunk_0412", page: "§ 5",
+    tokens: 142, chars: 689, mmr: 0.834, rerank: 0.861, neighbors: ["chunk_0411", "chunk_0413"],
+    text: `Qdrant exposes the HNSW configuration per-collection at create time and per-segment thereafter. Use the \`hnsw_config\` block on \`POST /collections/{name}\` to set \`m\`, \`ef_construct\`, \`full_scan_threshold\`, and \`on_disk\` placement.
+
+The \`on_disk\` flag is significant for memory-constrained deployments — it keeps the graph in mmap'd storage rather than RAM, trading ~3× query latency for ~80% memory reduction. Combine with payload indexing for filterable search.`,
+  },
+  {
+    rank: 4, file: "docs/storage/index-tuning.md", chunk: "chunk_0089", page: "§ 1.4",
+    tokens: 128, chars: 612, mmr: 0.801, rerank: 0.792, neighbors: ["chunk_0088", "chunk_0090"],
+    text: `Benchmarks show HNSW outperforming IVF-PQ on recall@10 for embeddings produced by transformer models with dim ≥ 768. The gap widens at dim 1536+ because PQ's coarse quantization loses too much resolution.
+
+If you must use PQ for memory reasons, prefer \`pq_m=64, pq_nbits=8\` with a \`refine=true\` reranking step against full-precision vectors stored on disk.`,
+  },
+  {
+    rank: 5, file: "docs/api/search.md", chunk: "chunk_0254", page: "§ 2",
+    tokens: 117, chars: 558, mmr: 0.762, rerank: 0.724, neighbors: ["chunk_0253", "chunk_0255"],
+    text: `The \`/collections/{name}/points/search\` endpoint accepts an optional \`params\` block where you can override \`ef\` per request: \`{"params": {"hnsw_ef": 128}}\`. This is the recommended lever for raising recall on user-facing queries without re-tuning the whole collection.
+
+For batch evaluation, send the same payload via \`search/batch\` — Qdrant parallelizes graph traversal across the batch.`,
+  },
+  {
+    rank: 6, file: "docs/storage/qdrant.md", chunk: "chunk_0728", page: "§ 3",
+    tokens: 104, chars: 489, mmr: 0.741, rerank: 0.688, neighbors: ["chunk_0727", "chunk_0729"],
+    text: `Qdrant supports three index types: HNSW (default), flat (exact KNN, for collections under 10k points), and sparse vectors via inverted lists for BM25-style hybrid retrieval.
+
+The collection-level \`hnsw_config.full_scan_threshold\` lets small filtered subsets fall back to exact search automatically, avoiding the recall cliff that HNSW exhibits under aggressive filters.`,
+  },
+  {
+    rank: 7, file: "docs/concepts/ann.md", chunk: "chunk_0510", page: "§ 4.1",
+    tokens: 96, chars: 442, mmr: 0.722, rerank: 0.641, neighbors: ["chunk_0509", "chunk_0511"],
+    text: `Approximate nearest neighbor (ANN) algorithms trade exactness for speed. The three dominant families are graph-based (HNSW, NSG), tree-based (Annoy), and quantization-based (IVF, PQ, ScaNN).
+
+Graph methods consistently lead recall/QPS benchmarks for embeddings above 256 dimensions but require more build memory than quantization approaches.`,
+  },
+];
+
+function ScoreBar({ label, value, accent = "var(--accent)" }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.4, width: 50 }}>
+        {label}
+      </span>
+      <div style={{ flex: 1, height: 4, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden", minWidth: 60 }}>
+        <div style={{ height: "100%", width: `${value * 100}%`, background: accent }} />
+      </div>
+      <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)", width: 44, textAlign: "right" }}>
+        {value.toFixed(3)}
+      </span>
+    </div>
+  );
+}
+
+function ConfigChip({ k, v }) {
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px",
+      border: "1px solid var(--line)", borderRadius: 6, background: "var(--bg-2)"
+    }}>
+      <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>{k}</span>
+      <span className="mono" style={{ fontSize: 12, color: "var(--fg)" }}>{v}</span>
+      <Icon name="chevron" size={11} />
+    </div>
+  );
+}
+
+function ResultCard({ r, selected, onSelect }) {
+  const preview = r.text.length > 200 ? r.text.slice(0, 200).replace(/\s+\S*$/, "") + "…" : r.text;
+  return (
+    <button onClick={() => onSelect(r.rank)}
+      style={{
+        width: "100%", textAlign: "left", padding: "14px 16px",
+        background: selected ? "var(--bg-2)" : "var(--bg-1)",
+        border: "1px solid " + (selected ? "var(--accent-dim)" : "var(--line)"),
+        borderRadius: 8, display: "flex", flexDirection: "column", gap: 10,
+        position: "relative",
+      }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = "var(--bg-2)"; }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.background = "var(--bg-1)"; }}>
+      {selected && <div style={{ position: "absolute", left: -1, top: 12, bottom: 12, width: 2, background: "var(--accent)", borderRadius: 2 }} />}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="mono" style={{
+          fontSize: 11, color: "var(--fg-3)", border: "1px solid var(--line-2)",
+          borderRadius: 4, padding: "1px 6px", flexShrink: 0
+        }}>#{r.rank}</span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
+          {r.file}
+        </span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)", flexShrink: 0 }}>{r.page}</span>
+      </div>
+
+      <div style={{ fontSize: 13, color: "var(--fg-2)", lineHeight: 1.55 }}>
+        {preview}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, paddingTop: 4 }}>
+        <ScoreBar label="MMR" value={r.mmr} />
+        <ScoreBar label="Rerank" value={r.rerank} accent="var(--purple)" />
+      </div>
+    </button>
+  );
+}
+
+function FullChunkPanel({ chunk, query }) {
+  if (!chunk) {
+    return (
+      <div style={{
+        border: "1px dashed var(--line-2)", borderRadius: 10, background: "var(--bg-1)",
+        height: "100%", display: "grid", placeItems: "center", color: "var(--fg-4)", padding: 40, textAlign: "center"
+      }}>
+        <div>
+          <div style={{ fontSize: 13, marginBottom: 6, color: "var(--fg-3)" }}>No chunk selected</div>
+          <div className="mono" style={{ fontSize: 11.5 }}>click a result on the left to inspect</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)", border: "1px solid var(--line-2)", borderRadius: 4, padding: "1px 6px" }}>#{chunk.rank}</span>
+        <span className="mono" style={{ fontSize: 12.5, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{chunk.file}</span>
+        <button style={{ color: "var(--fg-3)", fontSize: 11.5, display: "flex", alignItems: "center", gap: 4 }} className="mono">
+          open ↗
+        </button>
+      </div>
+
+      {/* metadata grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "10px 16px", borderBottom: "1px solid var(--line)", gap: 14, background: "var(--bg-2)" }}>
+        {[
+          ["chunk_id", chunk.chunk],
+          ["section", chunk.page],
+          ["tokens", chunk.tokens],
+          ["chars", chunk.chars],
+        ].map(([k, v]) => (
+          <div key={k} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500 }}>{k}</span>
+            <span className="mono" style={{ fontSize: 12.5, color: "var(--fg)" }}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* scores */}
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 10 }}>
+        <ScoreBar label="MMR" value={chunk.mmr} />
+        <ScoreBar label="Rerank" value={chunk.rerank} accent="var(--purple)" />
+        <ScoreBar label="Combined" value={(chunk.mmr * 0.4 + chunk.rerank * 0.6)} accent="var(--blue)" />
+      </div>
+
+      {/* full text */}
+      <div style={{ padding: "14px 16px", overflowY: "auto", flex: 1 }}>
+        <div style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500, marginBottom: 8 }}>
+          Full chunk text
+        </div>
+        <div className="mono" style={{
+          fontSize: 12.5, lineHeight: 1.65, color: "var(--fg-2)",
+          background: "var(--bg-2)", border: "1px solid var(--line)", borderRadius: 6,
+          padding: "12px 14px", whiteSpace: "pre-wrap",
+        }}>
+          {chunk.text}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, fontSize: 11.5, color: "var(--fg-3)" }}>
+          <span className="mono" style={{ color: "var(--fg-4)" }}>neighbors:</span>
+          {chunk.neighbors.map(n => (
+            <button key={n} className="mono" style={{
+              fontSize: 11.5, color: "var(--fg-2)",
+              border: "1px solid var(--line)", borderRadius: 4, padding: "2px 7px"
+            }}>{n}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Retrieval() {
+  const [query, setQuery] = useState("");
+  const [executed, setExecuted] = useState("");
+  const [selected, setSelected] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const results = executed ? CORPUS : [];
+  const selectedChunk = results.find(r => r.rank === selected);
+
+  const run = (q) => {
+    const text = (q ?? query).trim();
+    if (!text) return;
+    setLoading(true);
+    setExecuted("");
+    setTimeout(() => {
+      setExecuted(text);
+      setSelected(1);
+      setLoading(false);
+    }, 700);
+  };
+
+  const tookMs = 142;
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ padding: "28px 32px 40px", maxWidth: 1320 }}>
+        {/* Header row */}
+        <div style={{ marginBottom: 20 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Retrieval</h1>
+          <div style={{ color: "var(--fg-3)", fontSize: 13, marginTop: 4 }}>
+            Inspect raw retrieval output. Run queries against the active pipeline and view ranked chunks with MMR and rerank scores.
+          </div>
+        </div>
+
+        {/* Config bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <ConfigChip k="top_k" v="20" />
+          <ConfigChip k="rerank_top_n" v="7" />
+          <ConfigChip k="embedding_model" v="te-3-large" />
+          <ConfigChip k="rerank_model" v="cohere-rerank-v3" />
+          <ConfigChip k="mmr_lambda" v="0.5" />
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, color: "var(--fg-3)", fontSize: 12 }}>
+            <span>collection:</span>
+            <span className="mono" style={{ color: "var(--fg)" }}>product-docs</span>
+            <span style={{ color: "var(--green)" }}>●</span>
+          </div>
+        </div>
+
+        {/* Search box */}
+        <div style={{
+          border: "1px solid var(--line-2)", background: "var(--bg-1)", borderRadius: 10,
+          padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, marginBottom: 24,
+        }}>
+          <span style={{ color: "var(--fg-4)" }}><Icon name="retrieval" size={16} /></span>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") run(); }}
+            placeholder="Query your collection — e.g. how does HNSW indexing work in Qdrant?"
+            style={{
+              flex: 1, background: "transparent", border: "none", outline: "none",
+              color: "var(--fg)", fontSize: 14, fontFamily: "inherit", padding: "4px 0",
+            }}
+          />
+          {executed && (
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>
+              {results.length} hits · {tookMs}ms
+            </span>
+          )}
+          <button onClick={() => run()} disabled={!query.trim()}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
+              background: query.trim() ? "var(--accent)" : "var(--bg-3)",
+              color: query.trim() ? "#08221f" : "var(--fg-4)",
+              borderRadius: 6, fontSize: 12.5, fontWeight: 600,
+              cursor: query.trim() ? "pointer" : "not-allowed",
+            }}>
+            Retrieve
+          </button>
+        </div>
+
+        {/* Body */}
+        {!executed && !loading ? (
+          <div style={{
+            border: "1px dashed var(--line-2)", borderRadius: 10, background: "var(--bg-1)",
+            height: 380, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            color: "var(--fg-3)", textAlign: "center",
+          }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 8, background: "var(--bg-2)",
+              border: "1px solid var(--line)", display: "grid", placeItems: "center",
+              color: "var(--accent)", marginBottom: 14
+            }}>
+              <Icon name="retrieval" size={18} />
+            </div>
+            <div style={{ fontSize: 15, color: "var(--fg)", marginBottom: 4, fontWeight: 500 }}>
+              Enter a query to retrieve relevant chunks
+            </div>
+            <div style={{ fontSize: 12.5, marginBottom: 20, maxWidth: 440 }}>
+              Results are ranked by MMR similarity and re-scored by the rerank model.
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: 620 }}>
+              {[
+                "how does HNSW indexing work in Qdrant?",
+                "embedding model dimensions",
+                "chunk overlap recommendations",
+                "filter by metadata in search",
+              ].map(s => (
+                <button key={s} onClick={() => { setQuery(s); run(s); }}
+                  style={{
+                    fontSize: 11.5, padding: "5px 10px", border: "1px solid var(--line)",
+                    borderRadius: 999, color: "var(--fg-2)", background: "var(--bg-2)"
+                  }} className="mono">
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.05fr)", gap: 20 }}>
+            {/* Results list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <div style={{ fontSize: 12, color: "var(--fg-3)" }}>
+                  Query <span className="mono" style={{ color: "var(--fg)" }}>"{executed || query}"</span>
+                </div>
+                <div style={{ marginLeft: "auto", fontSize: 11, color: "var(--fg-4)" }} className="mono">
+                  sorted by rerank
+                </div>
+              </div>
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} style={{
+                    height: 130, border: "1px solid var(--line)", borderRadius: 8,
+                    background: "var(--bg-1)", padding: 16,
+                    display: "flex", flexDirection: "column", gap: 10
+                  }}>
+                    <div style={{ height: 10, width: "40%", background: "var(--bg-3)", borderRadius: 3 }} />
+                    <div style={{ height: 8, width: "92%", background: "var(--bg-3)", borderRadius: 3 }} />
+                    <div style={{ height: 8, width: "78%", background: "var(--bg-3)", borderRadius: 3 }} />
+                    <div style={{ height: 4, width: "100%", background: "var(--bg-3)", borderRadius: 2, marginTop: "auto" }} />
+                  </div>
+                ))
+              ) : (
+                results.map(r => (
+                  <ResultCard key={r.rank} r={r} selected={selected === r.rank} onSelect={setSelected} />
+                ))
+              )}
+            </div>
+
+            {/* Full chunk panel */}
+            <div style={{ position: "sticky", top: 16, alignSelf: "start", maxHeight: "calc(100vh - 200px)" }}>
+              <FullChunkPanel chunk={loading ? null : selectedChunk} query={executed} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- evaluation ---------- */
+const EVAL_METRICS = [
+  { key: "faithfulness",      label: "Faithfulness",      score: 0.892, prev: 0.871, desc: "Answer grounded in retrieved context" },
+  { key: "relevancy",         label: "Answer Relevancy",  score: 0.847, prev: 0.829, desc: "Answer addresses the question asked" },
+  { key: "context_precision", label: "Context Precision", score: 0.781, prev: 0.812, desc: "Retrieved chunks are useful" },
+  { key: "context_recall",    label: "Context Recall",    score: 0.823, prev: 0.798, desc: "All needed info was retrieved" },
+];
+
+const EVAL_QUESTIONS = [
+  { id: 1,  q: "How do I authenticate API requests?",                        a: "Use the Authorization header as `Bearer <key>`. Keys are workspace-scoped and can be rotated…",      f: 0.94, r: 0.91, s: "pass" },
+  { id: 2,  q: "What's the rate limit on the embeddings endpoint?",          a: "60 requests/sec per workspace, with bursts of 120. Returns 429 with Retry-After on overage.",          f: 0.97, r: 0.95, s: "pass" },
+  { id: 3,  q: "Explain recursive chunking strategy",                        a: "Splits text by paragraph, then sentence, then token, falling back to smaller separators…",              f: 0.89, r: 0.88, s: "pass" },
+  { id: 4,  q: "How does HNSW indexing work in Qdrant?",                     a: "Builds a multi-layer graph for approximate nearest-neighbor search with logarithmic complexity…",     f: 0.93, r: 0.90, s: "pass" },
+  { id: 5,  q: "What embedding models are supported?",                       a: "OpenAI te-3-small, te-3-large, Voyage-3, and Cohere embed-multilingual-v3 are first-class.",            f: 0.91, r: 0.87, s: "pass" },
+  { id: 6,  q: "Can I filter search results by metadata?",                   a: "Yes — pass a `filter` block with field/op/value. Filters use payload indexing on the storage layer.",   f: 0.88, r: 0.84, s: "pass" },
+  { id: 7,  q: "What's the maximum chunk size?",                             a: "Up to the embedding model's context window, but 512–1024 tokens is recommended for retrieval quality.", f: 0.95, r: 0.92, s: "pass" },
+  { id: 8,  q: "How do I rotate API keys without downtime?",                 a: "Issue a new key first, deploy with both keys valid, then revoke the old one. Sessions are unaffected.", f: 0.92, r: 0.89, s: "pass" },
+  { id: 9,  q: "Difference between MMR and rerank scoring",                  a: "MMR balances similarity with diversity at retrieval; rerank uses a cross-encoder for relevance…",       f: 0.86, r: 0.83, s: "pass" },
+  { id: 10, q: "How to handle PDF documents?",                               a: "Use the built-in PDF loader which extracts text via pdfplumber and preserves page numbers…",            f: 0.84, r: 0.79, s: "warn" },
+  { id: 11, q: "What's stored in the trace logs?",                           a: "Query, retrieved chunks with scores, LLM completion, token counts, and latencies per pipeline stage.", f: 0.96, r: 0.93, s: "pass" },
+  { id: 12, q: "Cost per 1k tokens for te-3-large",                          a: "$0.13 per 1M input tokens at the OpenAI public price. Cached embeddings are free on re-retrieval.",     f: 0.62, r: 0.71, s: "fail" },
+  { id: 13, q: "How to set up hybrid BM25 + dense search?",                  a: "Enable sparse vectors on the collection and combine scores with the rrf or weighted_sum fusion mode.",  f: 0.88, r: 0.86, s: "pass" },
+  { id: 14, q: "What happens during pipeline re-runs?",                      a: "Only changed documents are re-embedded; unchanged content keeps its existing vectors and metadata.",     f: 0.90, r: 0.88, s: "pass" },
+  { id: 15, q: "How do I export retrieval results?",                         a: "POST /v1/eval/export returns JSONL with question, retrieved chunks, scores, and ground truth labels.",   f: 0.83, r: 0.78, s: "warn" },
+  { id: 16, q: "Can I A/B test two pipelines?",                              a: "Create both as named pipelines, then route traffic via the Experiment block on the chat endpoint…",     f: 0.87, r: 0.85, s: "pass" },
+  { id: 17, q: "How is chunk overlap configured?",                           a: "Set `overlap` (in tokens) on the chunker stage; default 64. Higher overlap improves recall on boundaries.", f: 0.94, r: 0.90, s: "pass" },
+  { id: 18, q: "What's the SLA on cold-start queries?",                      a: "Median p50 ~ 280ms cold, ~ 95ms warm. Cold-start applies after 5min of pipeline inactivity.",            f: 0.79, r: 0.74, s: "warn" },
+  { id: 19, q: "How to debug a low-faithfulness answer?",                    a: "Open the trace, compare retrieved chunks to the generated answer, and check rerank scores per source.", f: 0.91, r: 0.89, s: "pass" },
+  { id: 20, q: "Are embeddings stored encrypted at rest?",                   a: "Yes — AES-256 with per-workspace keys. Bring-your-own-KMS is supported on enterprise plans.",           f: 0.95, r: 0.92, s: "pass" },
+  { id: 21, q: "What's the latest version of the SDK?",                      a: "v2.4.0, released last week. Notable: streaming retrieval and async batch embeddings.",                   f: 0.55, r: 0.68, s: "fail" },
+  { id: 22, q: "How do I configure on-disk HNSW storage?",                   a: "Set `hnsw_config.on_disk: true` on the collection. Reduces memory ~80% at ~3× query latency.",          f: 0.93, r: 0.88, s: "pass" },
+];
+
+function MetricCard({ m }) {
+  const delta = m.score - m.prev;
+  const deltaColor = delta >= 0 ? "var(--green)" : "var(--red)";
+  return (
+    <div style={{
+      border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)",
+      padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12, minWidth: 0,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: "var(--fg-3)", fontWeight: 500 }}>{m.label}</div>
+          <div style={{ fontSize: 11, color: "var(--fg-4)", marginTop: 2 }}>{m.desc}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span className="mono" style={{ fontSize: 11, color: deltaColor }}>
+            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(3)}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <div className="mono" style={{ fontSize: 30, fontWeight: 500, letterSpacing: -0.6, color: "var(--fg)", lineHeight: 1 }}>
+          {m.score.toFixed(3)}
+        </div>
+        <div className="mono" style={{ fontSize: 12, color: "var(--fg-4)" }}>/ 1.000</div>
+      </div>
+
+      <div>
+        <div style={{ height: 5, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden", position: "relative" }}>
+          <div style={{ position: "absolute", left: `${m.prev * 100}%`, top: -2, bottom: -2, width: 1, background: "var(--fg-4)" }} />
+          <div style={{ height: "100%", width: `${m.score * 100}%`, background: m.score >= 0.85 ? "var(--green)" : m.score >= 0.75 ? "var(--accent)" : m.score >= 0.6 ? "var(--yellow)" : "var(--red)" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 10.5, color: "var(--fg-4)" }}>
+          <span className="mono">prev {m.prev.toFixed(3)}</span>
+          <span className="mono">{m.score >= 0.85 ? "good" : m.score >= 0.75 ? "ok" : "needs attention"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }) {
+  const cfg = {
+    pass: { c: "var(--green)", l: "pass" },
+    warn: { c: "var(--yellow)", l: "warn" },
+    fail: { c: "var(--red)", l: "fail" },
+  }[status];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
+      color: cfg.c, textTransform: "capitalize",
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.c }} />
+      <span className="mono">{cfg.l}</span>
+    </span>
+  );
+}
+
+function ScoreCell({ value }) {
+  const c = value >= 0.85 ? "var(--green)" : value >= 0.75 ? "var(--accent)" : value >= 0.6 ? "var(--yellow)" : "var(--red)";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, height: 3, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden", minWidth: 50 }}>
+        <div style={{ height: "100%", width: `${value * 100}%`, background: c }} />
+      </div>
+      <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)", width: 40, textAlign: "right" }}>
+        {value.toFixed(2)}
+      </span>
+    </div>
+  );
+}
+
+function Evaluation() {
+  const [phase, setPhase] = useState("complete"); // "idle" | "running" | "complete"
+  const [progress, setProgress] = useState(0);
+  const timerRef = React.useRef(null);
+
+  const start = () => {
+    setPhase("running");
+    setProgress(0);
+    let p = 0;
+    timerRef.current = setInterval(() => {
+      p += 1;
+      setProgress(p);
+      if (p >= 22) {
+        clearInterval(timerRef.current);
+        setTimeout(() => setPhase("complete"), 350);
+      }
+    }, 140);
+  };
+
+  React.useEffect(() => () => clearInterval(timerRef.current), []);
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ padding: "28px 32px 60px", maxWidth: 1320 }}>
+        {/* Title row */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 32, marginBottom: 24 }}>
+          <div style={{ flex: 1 }}>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Evaluation</h1>
+            <div style={{ color: "var(--fg-3)", fontSize: 13, marginTop: 4, maxWidth: 540 }}>
+              Runs <span className="mono" style={{ color: "var(--fg-2)" }}>22</span> test questions through RAGAS metrics:
+              faithfulness, answer relevancy, context precision, and context recall.
+            </div>
+          </div>
+
+          {/* Last run meta */}
+          {phase === "complete" && (
+            <div style={{ display: "flex", gap: 24, fontSize: 12 }}>
+              {[
+                ["Last run", "Mar 14, 09:12"],
+                ["Duration", "3m 04s"],
+                ["Model", "gpt-4o"],
+                ["Suite", "ragas-v0.3"],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <span style={{ fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500 }}>{k}</span>
+                  <span className="mono" style={{ color: "var(--fg)", fontSize: 12.5 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Run CTA panel */}
+        <div style={{
+          border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)",
+          padding: "18px 20px", marginBottom: 24, display: "flex", alignItems: "center", gap: 24,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--fg)", marginBottom: 2 }}>
+              {phase === "running" ? "Evaluation in progress…" : phase === "idle" ? "Ready to evaluate" : "Run a new evaluation"}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--fg-3)" }}>
+              {phase === "running"
+                ? <>Evaluating against <span className="mono" style={{ color: "var(--fg-2)" }}>product-docs</span> — embed query, retrieve top_k, generate, score.</>
+                : <>Test set <span className="mono" style={{ color: "var(--fg-2)" }}>core-22.jsonl</span> · pipeline <span className="mono" style={{ color: "var(--fg-2)" }}>product-docs</span> · judge <span className="mono" style={{ color: "var(--fg-2)" }}>gpt-4o</span></>
+              }
+            </div>
+
+            {phase === "running" && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(progress / 22) * 100}%`, background: "var(--accent)" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: "var(--fg-3)" }} className="mono">
+                  <span>{progress} / 22 questions evaluated</span>
+                  <span style={{ color: "var(--fg-4)" }}>q{Math.min(progress + 1, 22)}: {EVAL_QUESTIONS[Math.min(progress, 21)].q.slice(0, 60)}…</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={start}
+            disabled={phase === "running"}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "12px 22px",
+              background: phase === "running" ? "var(--bg-3)" : "var(--accent)",
+              color: phase === "running" ? "var(--fg-4)" : "#08221f",
+              borderRadius: 8, fontSize: 13.5, fontWeight: 600,
+              cursor: phase === "running" ? "not-allowed" : "pointer",
+              flexShrink: 0,
+            }}>
+            <Icon name="play" size={13} />
+            {phase === "running" ? "Running…" : phase === "idle" ? "Run Evaluation" : "Run again"}
+          </button>
+        </div>
+
+        {/* Idle state */}
+        {phase === "idle" && (
+          <div style={{
+            border: "1px dashed var(--line-2)", borderRadius: 10, background: "var(--bg-1)",
+            height: 380, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            color: "var(--fg-3)", textAlign: "center",
+          }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 8, background: "var(--bg-2)",
+              border: "1px solid var(--line)", display: "grid", placeItems: "center",
+              color: "var(--accent)", marginBottom: 14
+            }}>
+              <Icon name="eval" size={18} />
+            </div>
+            <div style={{ fontSize: 15, color: "var(--fg)", marginBottom: 4, fontWeight: 500 }}>
+              No evaluation runs yet
+            </div>
+            <div style={{ fontSize: 12.5, marginBottom: 4 }}>Click <span style={{ color: "var(--accent)" }}>Run Evaluation</span> to start.</div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>~ 3 min · ~ 32k tokens</div>
+          </div>
+        )}
+
+        {/* Metrics + Table (visible during running with last-run data, and complete) */}
+        {phase !== "idle" && (
+          <>
+            {/* Metric cards */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24,
+              opacity: phase === "running" ? 0.55 : 1, transition: "opacity 0.2s",
+            }}>
+              {EVAL_METRICS.map(m => <MetricCard key={m.key} m={m} />)}
+            </div>
+
+            {/* Results table */}
+            <section style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Per-question results</div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--fg-4)", marginLeft: 12 }}>
+                  {EVAL_QUESTIONS.filter(q => q.s === "pass").length} pass · {EVAL_QUESTIONS.filter(q => q.s === "warn").length} warn · {EVAL_QUESTIONS.filter(q => q.s === "fail").length} fail
+                </div>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 14, fontSize: 12, color: "var(--fg-3)" }}>
+                  <button style={{ color: "inherit" }}>Filter</button>
+                  <button style={{ color: "inherit" }}>Export</button>
+                  <button style={{ color: "inherit" }} className="mono">view trace ↗</button>
+                </div>
+              </div>
+
+              {/* head */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "32px minmax(0, 1.2fr) minmax(0, 1.4fr) 130px 130px 80px",
+                padding: "0 16px", borderBottom: "1px solid var(--line)",
+                fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5,
+                fontWeight: 500, height: 32, alignItems: "center", columnGap: 18,
+              }}>
+                <div className="mono" style={{ textTransform: "none" }}>#</div>
+                <div>Question</div>
+                <div>Answer</div>
+                <div>Faithfulness</div>
+                <div>Relevancy</div>
+                <div>Status</div>
+              </div>
+
+              {EVAL_QUESTIONS.map((row, i) => (
+                <div key={row.id} style={{
+                  display: "grid",
+                  gridTemplateColumns: "32px minmax(0, 1.2fr) minmax(0, 1.4fr) 130px 130px 80px",
+                  padding: "11px 16px", fontSize: 12.5, alignItems: "center",
+                  borderBottom: i === EVAL_QUESTIONS.length - 1 ? "none" : "1px solid var(--line)",
+                  columnGap: 18,
+                }}>
+                  <div className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>{String(row.id).padStart(2, "0")}</div>
+                  <div style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.q}</div>
+                  <div style={{ color: "var(--fg-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.a}</div>
+                  <ScoreCell value={row.f} />
+                  <ScoreCell value={row.r} />
+                  <StatusPill status={row.s} />
+                </div>
+              ))}
+            </section>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- docs ---------- */
+const DOCS_SECTIONS = [
+  { id: "overview",     label: "Overview" },
+  { id: "architecture", label: "Architecture" },
+  { id: "stack",        label: "Tech stack" },
+  { id: "config",       label: "Config decisions" },
+  { id: "limitations",  label: "Known limitations" },
+  { id: "roadmap",      label: "Roadmap" },
+];
+
+const DOC_VERSIONS = [
+  { v: "RAG v1",     state: "current", date: "Released Mar 2026", note: "Single-pipeline RAG with rerank, RAGAS eval, traces.", id: "v1" },
+  { v: "RAG v2",     state: "next",    date: "Q3 2026",            note: "Hybrid BM25 + dense, streaming retrieval, BYO judge.", id: "v2" },
+  { v: "Graph RAG",  state: "planned", date: "Q4 2026 / 2027",     note: "Knowledge-graph extraction with multi-hop reasoning.", id: "v3" },
+];
+
+const TECH_STACK = [
+  ["Source loader",  "GitHub via @octokit",  "20.0.2"],
+  ["Chunker",        "LangChain RecursiveCharacterTextSplitter", "0.2.10"],
+  ["Embedding",      "OpenAI text-embedding-3-large", "—"],
+  ["Vector store",   "Qdrant (HNSW, on-disk)", "1.9.0"],
+  ["Reranker",       "Cohere rerank-v3", "v3"],
+  ["LLM",            "OpenAI gpt-4o", "2024-08-06"],
+  ["Eval suite",     "RAGAS",  "0.3.4"],
+  ["Tracing",        "OpenTelemetry → Tempo", "1.27.0"],
+  ["API server",     "FastAPI", "0.115.0"],
+  ["Runtime",        "Python", "3.11.6"],
+];
+
+const CONFIG_DECISIONS = [
+  {
+    key: "CHUNK_SIZE", v: "512", unit: "tokens",
+    rationale: "Balances local context against retrieval precision. 512 tokens captures a typical doc section without diluting embeddings. Smaller chunks improve precision but hurt recall on multi-sentence answers; larger chunks pull in noise that lowers rerank scores.",
+  },
+  {
+    key: "CHUNK_OVERLAP", v: "64", unit: "tokens",
+    rationale: "12.5% of chunk size — enough to preserve answers that straddle boundaries, without producing redundant near-duplicate vectors. At overlap > 25% we measured a 4-point drop in MMR diversity with no recall gain.",
+  },
+  {
+    key: "TOP_K", v: "20", unit: "candidates",
+    rationale: "Initial dense-retrieval candidate set sent to the reranker. Increasing past 20 yields diminishing returns on recall@5 in our eval (+0.4 points at top_k=50, +0.5 at top_k=100), at material cost to rerank latency.",
+  },
+  {
+    key: "RERANK_TOP_N", v: "7", unit: "chunks",
+    rationale: "Final context window passed to the LLM. Empirically the best trade-off: at n=5 faithfulness drops 3pt because supporting evidence is missed; at n=10 answer relevancy drops 2pt as the model gets distracted.",
+  },
+  {
+    key: "MMR_LAMBDA", v: "0.5", unit: "—",
+    rationale: "Balances pure similarity (λ=1.0) against diversity (λ=0.0). 0.5 is a deliberate compromise — surfaces complementary chunks without sacrificing the top match. Tune higher for FAQ-style corpora.",
+  },
+];
+
+const LIMITATIONS = [
+  { sev: "warn",  title: "PDF tables lose fidelity",                detail: "pdfplumber extracts row text but drops column alignment. ~30% of queries against table-heavy docs return partial answers. Workaround: pre-convert to Markdown." },
+  { sev: "warn",  title: "Code blocks split across chunks",         detail: "RecursiveSplitter doesn't respect fenced code boundaries. Functions over 200 LOC may lose context when cited." },
+  { sev: "fail",  title: "Recency-sensitive questions",             detail: "Questions like 'what's the latest version?' score 0.55 / 0.68 on faithfulness/relevancy. The corpus lacks a time index — V2 will add freshness-aware ranking." },
+  { sev: "info",  title: "Single-collection scope",                 detail: "V1 supports one vector collection per pipeline. Cross-collection retrieval requires V2's multi-source planner." },
+  { sev: "info",  title: "No streaming on retrieval endpoint",      detail: "/v1/chat/completions streams generation but not retrieval — first-chunk latency includes the full retrieval round-trip. Fixed in V2." },
+];
+
+const ROADMAP = [
+  { phase: "V2 – Q3 2026", items: [
+    { t: "Hybrid retrieval",        s: "BM25 sparse + dense fusion via RRF" },
+    { t: "Streaming retrieval",     s: "Emit ranked chunks as they arrive from the reranker" },
+    { t: "BYO judge",               s: "Plug Claude or local model into the RAGAS pipeline" },
+    { t: "Cost-aware routing",      s: "Route to gpt-4o-mini when confidence > threshold" },
+  ]},
+  { phase: "Graph RAG – Q4 2026", items: [
+    { t: "Entity extraction",       s: "Build a knowledge graph from indexed docs at ingest time" },
+    { t: "Multi-hop reasoning",     s: "Traverse the graph to answer queries that span 2-3 documents" },
+    { t: "Schema inference",        s: "Auto-derive entity/relation types from the corpus" },
+  ]},
+];
+
+function CodeBlock({ children, lang = "python" }) {
+  // very lightweight tokenizer — keywords, strings, numbers, comments
+  const KW = /\b(import|from|def|class|return|if|else|for|in|None|True|False|as|with|async|await|yield)\b/g;
+  const lines = String(children).split("\n");
+  return (
+    <div style={{
+      border: "1px solid var(--line)", borderRadius: 8, background: "var(--bg-2)",
+      overflow: "hidden",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", padding: "6px 12px",
+        borderBottom: "1px solid var(--line)", background: "var(--bg-1)",
+      }}>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>{lang}</span>
+        <button style={{ marginLeft: "auto", fontSize: 11, color: "var(--fg-3)" }} className="mono">copy</button>
+      </div>
+      <div style={{ padding: "12px 14px", display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 14, rowGap: 0 }}>
+        {lines.map((line, i) => {
+          // tokenize
+          let html = line
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            .replace(/(#.*$)/g, '<span style="color:var(--fg-4)">$1</span>')
+            .replace(/("[^"]*")/g, '<span style="color:var(--green)">$1</span>')
+            .replace(/(\b\d+\b)/g, '<span style="color:var(--purple)">$1</span>')
+            .replace(KW, '<span style="color:var(--blue)">$&</span>');
+          return (
+            <React.Fragment key={i}>
+              <div className="mono" style={{ fontSize: 11, color: "var(--fg-4)", textAlign: "right", userSelect: "none" }}>
+                {i + 1}
+              </div>
+              <div className="mono" style={{ fontSize: 12.5, color: "var(--fg-2)", lineHeight: 1.65, whiteSpace: "pre" }}
+                dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }} />
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DocsCard({ id, eyebrow, title, children }) {
+  return (
+    <section id={id} style={{
+      border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)",
+      padding: "22px 24px", marginBottom: 18, scrollMarginTop: 16,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
+        <span className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>
+          {eyebrow}
+        </span>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: -0.2 }}>{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/* Architecture flow — 7 nodes, wraps to two rows */
+function ArchFlow() {
+  const nodes = [
+    { l: "PDF / MD", k: "source", icon: "source" },
+    { l: "Chunks",   k: "chunker", icon: "chunk" },
+    { l: "Embeddings", k: "embedder", icon: "embed" },
+    { l: "Vector DB", k: "store", icon: "db" },
+    { l: "Retrieval", k: "search", icon: "retrieval" },
+    { l: "LLM",       k: "llm", icon: "embed" },
+    { l: "Answer",    k: "answer", icon: "chat" },
+  ];
+  return (
+    <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", minWidth: "fit-content" }}>
+        {nodes.map((n, i) => (
+          <React.Fragment key={n.k}>
+            <div style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0
+            }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 10, background: "var(--bg-2)",
+                border: "1px solid var(--line-2)", display: "grid", placeItems: "center",
+                color: "var(--accent)",
+              }}>
+                <Icon name={n.icon} size={22} />
+              </div>
+              <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{n.l}</span>
+            </div>
+            {i < nodes.length - 1 && (
+              <div style={{ flexShrink: 0, padding: "0 6px", marginBottom: 22 }}>
+                <svg width="34" height="14" viewBox="0 0 34 14" fill="none">
+                  <path d="M0 7 H28" stroke="var(--line-2)" strokeWidth="1.2" />
+                  <path d="M24 2 L32 7 L24 12" stroke="var(--line-2)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{
+        marginTop: 18, display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+        gap: 8, fontSize: 11, color: "var(--fg-3)", textAlign: "center",
+      }}>
+        {[
+          "ingest",
+          "split 512/64",
+          "te-3-large",
+          "Qdrant HNSW",
+          "top_k=20 → rerank 7",
+          "gpt-4o",
+          "+ citations",
+        ].map((c, i) => (
+          <span key={i} className="mono">{c}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VersionTimeline() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <div style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500, marginBottom: 10 }}>
+        Versions
+      </div>
+      <div style={{ position: "relative" }}>
+        {/* vertical line */}
+        <div style={{ position: "absolute", left: 5, top: 6, bottom: 6, width: 1, background: "var(--line)" }} />
+        {DOC_VERSIONS.map((v, i) => {
+          const dotColor = v.state === "current" ? "var(--accent)" : v.state === "next" ? "var(--yellow)" : "var(--fg-4)";
+          const dotFill  = v.state === "current" ? "var(--accent)" : "transparent";
+          return (
+            <div key={v.id} style={{ display: "flex", gap: 14, marginBottom: i === DOC_VERSIONS.length - 1 ? 0 : 18, position: "relative" }}>
+              <div style={{
+                width: 11, height: 11, borderRadius: "50%", background: dotFill,
+                border: `1.4px solid ${dotColor}`, marginTop: 3, flexShrink: 0, zIndex: 1,
+              }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: v.state === "current" ? "var(--fg)" : "var(--fg-2)" }}>{v.v}</span>
+                  {v.state === "current" && (
+                    <span className="mono" style={{ fontSize: 9.5, color: "var(--accent)", border: "1px solid var(--accent-dim)", padding: "0 4px", borderRadius: 3, textTransform: "uppercase", letterSpacing: 0.5 }}>now</span>
+                  )}
+                </div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--fg-4)", marginTop: 1 }}>{v.date}</div>
+                <div style={{ fontSize: 11.5, color: "var(--fg-3)", lineHeight: 1.45, marginTop: 4 }}>{v.note}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DocsNav({ active, onJump }) {
+  return (
+    <nav style={{
+      width: 220, flexShrink: 0, position: "sticky", top: 24, alignSelf: "flex-start",
+      display: "flex", flexDirection: "column", gap: 28, maxHeight: "calc(100vh - 100px)",
+    }}>
+      <VersionTimeline />
+
+      <div>
+        <div style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500, marginBottom: 8 }}>
+          On this page
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 1, borderLeft: "1px solid var(--line)" }}>
+          {DOCS_SECTIONS.map(s => (
+            <button key={s.id} onClick={() => onJump(s.id)}
+              style={{
+                fontSize: 12.5, padding: "5px 12px", textAlign: "left",
+                color: active === s.id ? "var(--fg)" : "var(--fg-3)",
+                borderLeft: active === s.id ? "2px solid var(--accent)" : "2px solid transparent",
+                marginLeft: -1, fontWeight: active === s.id ? 500 : 400,
+              }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500, marginBottom: 8 }}>
+          Resources
+        </div>
+        {[
+          ["API reference",  "↗"],
+          ["GitHub repo",    "↗"],
+          ["Changelog",      "↗"],
+          ["Discord",        "↗"],
+        ].map(([l, a]) => (
+          <a key={l} href="#" style={{ display: "flex", alignItems: "center", padding: "4px 0", fontSize: 12.5, color: "var(--fg-3)", textDecoration: "none" }}>
+            <span style={{ flex: 1 }}>{l}</span>
+            <span className="mono" style={{ color: "var(--fg-4)" }}>{a}</span>
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function Docs() {
+  const [active, setActive] = useState("overview");
+  const scrollRef = React.useRef(null);
+
+  const jump = (id) => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const el = root.querySelector(`#${id}`);
+    if (!el) return;
+    const rootR = root.getBoundingClientRect();
+    const elR = el.getBoundingClientRect();
+    root.scrollTo({ top: root.scrollTop + (elR.top - rootR.top) - 20, behavior: "smooth" });
+    setActive(id);
+  };
+
+  const onScroll = () => {
+    const root = scrollRef.current;
+    if (!root) return;
+    let current = DOCS_SECTIONS[0].id;
+    for (const s of DOCS_SECTIONS) {
+      const el = root.querySelector(`#${s.id}`);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      const rootR = root.getBoundingClientRect();
+      if (r.top - rootR.top < 80) current = s.id;
+    }
+    setActive(current);
+  };
+
+  return (
+    <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ padding: "28px 32px 80px", maxWidth: 1320, display: "flex", gap: 40 }}>
+
+        <DocsNav active={active} onJump={jump} />
+
+        <div style={{ flex: 1, minWidth: 0, maxWidth: 860 }}>
+          {/* Title */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 500 }}>
+              docs / v1
+            </div>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 600, letterSpacing: -0.4 }}>
+              RAG Studio — Documentation
+            </h1>
+            <div style={{ color: "var(--fg-3)", fontSize: 13.5, marginTop: 6, maxWidth: 640, lineHeight: 1.6 }}>
+              Internal reference for the retrieval-augmented generation pipeline powering <span className="mono" style={{ color: "var(--fg-2)" }}>acme-docs</span>.
+              Covers architecture, the runtime stack, the rationale behind each config knob, V1 limitations,
+              and what's on the V2 roadmap.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <span className="mono" style={{ fontSize: 11, padding: "3px 8px", border: "1px solid var(--accent-dim)", color: "var(--accent)", borderRadius: 4 }}>v1.0.4</span>
+              <span className="mono" style={{ fontSize: 11, padding: "3px 8px", border: "1px solid var(--line)", color: "var(--fg-3)", borderRadius: 4 }}>updated 2 days ago</span>
+              <span className="mono" style={{ fontSize: 11, padding: "3px 8px", border: "1px solid var(--line)", color: "var(--fg-3)", borderRadius: 4 }}>4 min read</span>
+            </div>
+          </div>
+
+          {/* Overview */}
+          <DocsCard id="overview" eyebrow="01" title="Overview">
+            <div style={{ color: "var(--fg-2)", fontSize: 13.5, lineHeight: 1.7 }}>
+              <p style={{ margin: "0 0 12px" }}>
+                RAG Studio is a single-pipeline retrieval system. Documents are pulled from GitHub, split into 512-token chunks,
+                embedded with <span className="mono" style={{ color: "var(--accent)" }}>te-3-large</span>, and stored in a Qdrant collection.
+                Queries hit dense retrieval first, then a Cohere reranker narrows to the top 7 chunks before generation.
+              </p>
+              <p style={{ margin: 0, color: "var(--fg-3)" }}>
+                The system is opinionated: one source, one chunker, one embedder, one store. V2 generalises this into a graph of stages.
+              </p>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <CodeBlock lang="bash">{`# minimal local setup
+git clone github.com/acme/rag-studio
+cd rag-studio && uv sync
+export OPENAI_API_KEY=sk-...
+export QDRANT_URL=http://localhost:6333
+ragstudio pipeline run --pipeline product-docs`}</CodeBlock>
+            </div>
+          </DocsCard>
+
+          {/* Architecture */}
+          <DocsCard id="architecture" eyebrow="02" title="Architecture">
+            <div style={{ color: "var(--fg-3)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
+              Documents flow left-to-right at ingest time. Queries follow the same path from <span className="mono" style={{ color: "var(--fg-2)" }}>Vector DB</span> onward at query time.
+            </div>
+            <ArchFlow />
+            <div style={{
+              marginTop: 22, padding: "12px 14px", border: "1px solid var(--line)",
+              borderRadius: 8, background: "var(--bg-2)",
+              fontSize: 12.5, color: "var(--fg-2)", lineHeight: 1.6,
+            }}>
+              <span className="mono" style={{ color: "var(--accent)", marginRight: 8 }}>note</span>
+              The retrieval and LLM stages are independently scaled. Embedding is a one-time cost per chunk;
+              retrieval + generation runs per request.
+            </div>
+          </DocsCard>
+
+          {/* Tech stack */}
+          <DocsCard id="stack" eyebrow="03" title="Tech stack">
+            <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+              <div style={{
+                display: "grid", gridTemplateColumns: "1.1fr 1.8fr 0.7fr",
+                fontSize: 10.5, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5,
+                fontWeight: 500, padding: "10px 14px", borderBottom: "1px solid var(--line)",
+                background: "var(--bg-2)",
+              }}>
+                <div>Layer</div><div>Tool</div><div>Version</div>
+              </div>
+              {TECH_STACK.map((row, i) => (
+                <div key={row[0]} style={{
+                  display: "grid", gridTemplateColumns: "1.1fr 1.8fr 0.7fr",
+                  padding: "10px 14px", fontSize: 12.5, alignItems: "center",
+                  borderBottom: i === TECH_STACK.length - 1 ? "none" : "1px solid var(--line)",
+                }}>
+                  <div style={{ color: "var(--fg-2)" }}>{row[0]}</div>
+                  <div className="mono" style={{ color: "var(--fg)", fontSize: 12 }}>{row[1]}</div>
+                  <div className="mono" style={{ color: "var(--fg-3)", fontSize: 12 }}>{row[2]}</div>
+                </div>
+              ))}
+            </div>
+          </DocsCard>
+
+          {/* Config decisions */}
+          <DocsCard id="config" eyebrow="04" title="Config decisions">
+            <div style={{ color: "var(--fg-3)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
+              Defaults were chosen against the <span className="mono" style={{ color: "var(--fg-2)" }}>core-22</span> eval set. Override per pipeline via the <span className="mono" style={{ color: "var(--fg-2)" }}>pipeline.yaml</span> file.
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
+              {CONFIG_DECISIONS.map(c => (
+                <div key={c.key} style={{
+                  border: "1px solid var(--line)", borderRadius: 8, padding: "12px 16px",
+                  background: "var(--bg-2)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span className="mono" style={{ fontSize: 12.5, color: "var(--fg)", fontWeight: 500 }}>{c.key}</span>
+                    <span className="mono" style={{ fontSize: 12.5, color: "var(--accent)" }}>= {c.v}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>{c.unit}</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "var(--fg-2)", lineHeight: 1.6 }}>
+                    {c.rationale}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <CodeBlock lang="yaml">{`# pipeline.yaml
+chunker:
+  strategy: recursive
+  chunk_size: 512
+  chunk_overlap: 64
+retrieval:
+  top_k: 20
+  rerank_top_n: 7
+  mmr_lambda: 0.5
+embedding:
+  model: text-embedding-3-large
+  dim: 3072`}</CodeBlock>
+          </DocsCard>
+
+          {/* Limitations */}
+          <DocsCard id="limitations" eyebrow="05" title="Known limitations">
+            <div style={{ color: "var(--fg-3)", fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
+              Surfaced by the V1 evaluation runs. Items marked <span style={{ color: "var(--red)" }}>fail</span> block specific query shapes;
+              <span style={{ color: "var(--yellow)" }}> warn</span> items return partial answers.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {LIMITATIONS.map((l, i) => {
+                const color = l.sev === "fail" ? "var(--red)" : l.sev === "warn" ? "var(--yellow)" : "var(--fg-4)";
+                return (
+                  <div key={i} style={{
+                    border: "1px solid var(--line)", borderRadius: 8, padding: "12px 16px",
+                    background: "var(--bg-2)", display: "flex", gap: 14, alignItems: "flex-start",
+                  }}>
+                    <span className="mono" style={{
+                      fontSize: 10, color: color, border: `1px solid ${color}`, opacity: 0.85,
+                      padding: "1px 6px", borderRadius: 3, textTransform: "uppercase",
+                      letterSpacing: 0.5, marginTop: 2, flexShrink: 0,
+                    }}>{l.sev}</span>
+                    <div>
+                      <div style={{ fontSize: 13, color: "var(--fg)", fontWeight: 500, marginBottom: 3 }}>{l.title}</div>
+                      <div style={{ fontSize: 12.5, color: "var(--fg-3)", lineHeight: 1.6 }}>{l.detail}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </DocsCard>
+
+          {/* Roadmap */}
+          <DocsCard id="roadmap" eyebrow="06" title="Roadmap">
+            <div style={{ color: "var(--fg-3)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
+              Items in scope for the next two release cycles. Subject to change — see <span className="mono" style={{ color: "var(--fg-2)" }}>RFCs/</span> in the repo for proposals.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              {ROADMAP.map(r => (
+                <div key={r.phase}>
+                  <div className="mono" style={{ fontSize: 11.5, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    {r.phase}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {r.items.map(it => (
+                      <div key={it.t} style={{
+                        border: "1px solid var(--line)", borderRadius: 8, padding: "12px 14px",
+                        background: "var(--bg-2)",
+                      }}>
+                        <div style={{ fontSize: 13, color: "var(--fg)", fontWeight: 500, marginBottom: 3 }}>{it.t}</div>
+                        <div style={{ fontSize: 12, color: "var(--fg-3)", lineHeight: 1.5 }}>{it.s}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </DocsCard>
+
+          {/* Footer */}
+          <div style={{
+            display: "flex", alignItems: "center", marginTop: 28, paddingTop: 18,
+            borderTop: "1px solid var(--line)", fontSize: 12, color: "var(--fg-4)",
+          }}>
+            <span className="mono">docs/v1 · last edited mar 12 · maintained by core-infra</span>
+            <span style={{ marginLeft: "auto", display: "flex", gap: 14 }}>
+              <a href="#" style={{ color: "var(--fg-3)", textDecoration: "none" }}>Edit on GitHub ↗</a>
+              <a href="#" style={{ color: "var(--fg-3)", textDecoration: "none" }}>Report issue ↗</a>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- placeholder pages ---------- */
 function Placeholder({ name }) {
   return (
@@ -550,15 +2036,27 @@ function Placeholder({ name }) {
 
 /* ---------- app ---------- */
 function App() {
-  const [active, setActive] = useState("pipeline");
+  const [active, setActive] = useState("docs");
   const title = useMemo(() => NAV.find(n => n.id === active).label, [active]);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       <Sidebar active={active} setActive={setActive} />
-      <main style={{ flex: 1, minWidth: 0 }} data-screen-label={title}>
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", height: "100vh" }} data-screen-label={title}>
         <Header title={title} />
-        {active === "pipeline" ? <Pipeline /> : <Placeholder name={title} />}
+        {active === "pipeline" ? (
+          <div style={{ flex: 1, overflowY: "auto" }}><Pipeline /></div>
+        ) : active === "chat" ? (
+          <Chat />
+        ) : active === "retrieval" ? (
+          <Retrieval />
+        ) : active === "evaluation" ? (
+          <Evaluation />
+        ) : active === "docs" ? (
+          <Docs />
+        ) : (
+          <div style={{ flex: 1, overflowY: "auto" }}><Placeholder name={title} /></div>
+        )}
       </main>
     </div>
   );
