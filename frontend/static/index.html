@@ -232,12 +232,36 @@ function Header({ title }) {
           <Icon name="branch" size={13} />
           <span className="mono">main</span>
         </button>
-        <button style={{
-          display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
-          background: "var(--accent)", color: "#08221f", borderRadius: 6, fontSize: 12, fontWeight: 600
-        }}>
+        <input
+          type="file"
+          id="file-upload"
+          accept=".pdf,.csv"
+          style={{ display: "none" }}
+          onChange={async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append("file", file);
+            const btn = document.getElementById("upload-btn");
+            btn.innerText = "Uploading...";
+            try {
+              const res = await fetch("/api/ingest", { method: "POST", body: formData });
+              const data = await res.json();
+              btn.innerText = "✓ " + data.filename;
+            } catch (err) {
+              btn.innerText = "✗ Failed";
+            }
+          }}
+        />
+        <button
+          id="upload-btn"
+          onClick={() => document.getElementById("file-upload").click()}
+          style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
+            background: "var(--accent)", color: "#08221f", borderRadius: 6, fontSize: 12, fontWeight: 600
+          }}>
           <Icon name="play" size={11} />
-          <span>Run pipeline</span>
+          <span>Upload & Ingest</span>
         </button>
       </div>
     </header>
