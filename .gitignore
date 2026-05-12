@@ -1,0 +1,9 @@
+.venv/
+vectorstore/
+data/docs/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+*.pdf
+*.csv

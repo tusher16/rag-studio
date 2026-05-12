@@ -1,0 +1,34 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: always
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - nginx-proxy
+
+  rag-studio:
+    build: .
+    container_name: rag-studio
+    restart: always
+    volumes:
+      - ./data:/app/data
+      - ./vectorstore:/app/vectorstore
+    env_file: .env
+    environment:
+      - VIRTUAL_HOST=rag.tusher16.com
+      - VIRTUAL_PORT=8000
+      - LETSENCRYPT_HOST=rag.tusher16.com
+      - LETSENCRYPT_EMAIL=tusher16@gmail.com
+    depends_on:
+      - ollama
+    networks:
+      - nginx-proxy
+
+volumes:
+  ollama_data:
+
+networks:
+  nginx-proxy:
+    external: true
