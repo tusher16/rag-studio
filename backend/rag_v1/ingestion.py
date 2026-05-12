@@ -9,7 +9,7 @@ from langchain_chroma import Chroma
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-import config
+from rag_v1 import config
 
 
 def load_pdfs(data_dir: Path) -> list:
