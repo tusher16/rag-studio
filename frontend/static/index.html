@@ -864,13 +864,31 @@ function Chat() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length, loading]);
 
-  const send = (text) => {
+  const send = async (text) => {
     setMessages(m => [...m, { role: "user", text }]);
     setLoading(true);
-    setTimeout(() => {
-      setMessages(m => [...m, { role: "assistant", ...ANSWERS.default }]);
+    
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text }),
+      });
+      const data = await res.json();
+      setMessages(m => [...m, { 
+        role: "assistant", 
+        text: data.answer || "No answer returned",
+        citations: [] 
+      }]);
+    } catch (err) {
+      setMessages(m => [...m, { 
+        role: "assistant", 
+        text: "Error: " + err.message,
+        citations: [] 
+      }]);
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   const isEmpty = messages.length === 0 && !loading;
