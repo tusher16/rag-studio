@@ -238,20 +238,30 @@ function Header({ title }) {
           accept=".pdf,.csv"
           style={{ display: "none" }}
           onChange={async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const formData = new FormData();
-            formData.append("file", file);
-            const btn = document.getElementById("upload-btn");
-            btn.innerText = "Uploading...";
-            try {
-              const res = await fetch("/api/ingest", { method: "POST", body: formData });
+          const file = e.target.files[0];
+          if (!file) return;
+          const formData = new FormData();
+          formData.append("file", file);
+          const btn = document.getElementById("upload-btn");
+          btn.innerText = "Uploading...";
+
+          try {
+            await fetch("/api/ingest", { method: "POST", body: formData });
+
+            // Poll status
+            const poll = setInterval(async () => {
+              const res = await fetch("/api/ingest/status");
               const data = await res.json();
-              btn.innerText = "✓ " + data.filename;
-            } catch (err) {
-              btn.innerText = "✗ Failed";
-            }
-          }}
+              btn.innerText = data.state + " · " + data.message;
+              if (data.state === "complete" || data.state === "failed") {
+                clearInterval(poll);
+                btn.innerText = data.state === "complete" ? "✓ " + data.filename : "✗ " + data.message;
+              }
+            }, 2000);
+          } catch (err) {
+            btn.innerText = "✗ Failed";
+          }
+        }}
         />
         <button
           id="upload-btn"
