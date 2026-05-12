@@ -15,4 +15,4 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.get("/")
 async def index():
-    return FileResponse("frontend/static/RAG_Studio.html")
+    return FileResponse("frontend/static/index.html")
