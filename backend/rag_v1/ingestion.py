@@ -53,7 +53,7 @@ def chunk_documents(documents: list) -> list:
 def get_embedding_model():
     return HuggingFaceEmbeddings(
         model_name = config.EMBED_MODEL,
-        model_kwargs = {"device":"mps"},
+        model_kwargs = {"device":"cpu"},
         encode_kwargs = {"normalize_embeddings": True}
     )
 

@@ -5,14 +5,12 @@ from langchain_chroma import Chroma
 from langchain_classic.retrievers import ContextualCompressionRetriever
 from langchain_community.document_compressors import FlashrankRerank
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-import config
+from rag_v1 import config
 
 def load_vectorstore() -> Chroma:
     embeddings = HuggingFaceEmbeddings(
         model_name=config.EMBED_MODEL,
-        model_kwargs={"device": "mps"},
+        model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
 

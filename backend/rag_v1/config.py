@@ -1,6 +1,6 @@
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data" / "docs"
 VECTORSTORE_DIR = BASE_DIR / "vectorstore"
 

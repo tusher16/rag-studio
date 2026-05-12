@@ -5,10 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-import config
-
+from rag_v1 import config
 
 def format_context(docs: list) -> str:
     sections = []
