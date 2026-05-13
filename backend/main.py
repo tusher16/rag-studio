@@ -71,3 +71,22 @@ async def chat_api(req: ChatRequest):
     
     answer = chain.invoke(req.question)
     return {"answer": answer}
+
+@app.get("/api/stats")
+async def stats():
+    try:
+        from rag_v1.retrieval import load_vectorstore
+        vectorstore = load_vectorstore()
+        vector_count = vectorstore._collection.count()
+        
+        # count files in data/docs
+        pdf_files = list(DATA_DIR.glob("**/*.pdf"))
+        
+        return {
+            "documents": len(pdf_files),
+            "chunks": vector_count,
+            "vectors": vector_count,
+            "last_run": INGEST_STATUS.get("filename", "—"),
+        }
+    except Exception as e:
+        return {"documents": 0, "chunks": 0, "vectors": 0, "last_run": "—"}
