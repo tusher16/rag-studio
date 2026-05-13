@@ -110,7 +110,7 @@ async def retrieve_api(req: RetrieveRequest):
             "rank": i,
             "text": doc.page_content,
             "source": doc.metadata.get("source", "unknown"),
-            "page": doc.metadata.get("page", "?"),
-            "score": doc.metadata.get("relevance_score", 0.0),
+            "page": int(doc.metadata.get("page", 0)),
+            "score": float(doc.metadata.get("relevance_score", 0.0)),
         })
     return {"results": results, "count": len(results)}
