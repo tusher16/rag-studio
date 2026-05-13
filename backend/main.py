@@ -10,7 +10,6 @@ sys.path.insert(0, ".")
 from fastapi import BackgroundTasks
 
 
-
 load_dotenv()
 
 app = FastAPI(title="RAG Studio")
@@ -28,21 +27,23 @@ async def index():
 INGEST_STATUS = {"state": "idle", "filename": None, "message": ""}
 
 
+# Add near the top, after INGEST_STATUS
+RAG_CHAIN = None
+
 @app.on_event("startup")
 async def preload_models():
+    global RAG_CHAIN
     try:
         from rag_v1.retrieval import load_vectorstore, build_retriever
         from rag_v1.generation import build_rag_chain
         vs = load_vectorstore()
         retriever = build_retriever(vs)
-        chain = build_rag_chain(retriever)
-        # warm up LLM
-        chain.invoke("warmup")
+        RAG_CHAIN = build_rag_chain(retriever)
+        RAG_CHAIN.invoke("warmup")
         print("✓ Models preloaded on startup")
     except Exception as e:
         print(f"Preload failed: {e}")
 
-        
 @app.post("/api/ingest")
 async def ingest(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     file_path = DATA_DIR / file.filename
@@ -78,14 +79,15 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 async def chat_api(req: ChatRequest):
-    from rag_v1.retrieval import load_vectorstore, build_retriever
-    from rag_v1.generation import build_rag_chain
+    global RAG_CHAIN
+    if RAG_CHAIN is None:
+        from rag_v1.retrieval import load_vectorstore, build_retriever
+        from rag_v1.generation import build_rag_chain
+        vs = load_vectorstore()
+        retriever = build_retriever(vs)
+        RAG_CHAIN = build_rag_chain(retriever)
     
-    vectorstore = load_vectorstore()
-    retriever = build_retriever(vectorstore)
-    chain = build_rag_chain(retriever)
-    
-    answer = chain.invoke(req.question)
+    answer = RAG_CHAIN.invoke(req.question)
     return {"answer": answer}
 
 @app.get("/api/stats")
