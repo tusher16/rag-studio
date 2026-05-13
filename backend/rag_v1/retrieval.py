@@ -58,3 +58,5 @@ if __name__ == "__main__":
     vectorstore = load_vectorstore()
     retriever = build_retriever(vectorstore)
     retrieve("What is this paper about?", retriever)
+
+    

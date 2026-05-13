@@ -32,12 +32,17 @@ INGEST_STATUS = {"state": "idle", "filename": None, "message": ""}
 async def preload_models():
     try:
         from rag_v1.retrieval import load_vectorstore, build_retriever
+        from rag_v1.generation import build_rag_chain
         vs = load_vectorstore()
-        build_retriever(vs)
+        retriever = build_retriever(vs)
+        chain = build_rag_chain(retriever)
+        # warm up LLM
+        chain.invoke("warmup")
         print("✓ Models preloaded on startup")
     except Exception as e:
         print(f"Preload failed: {e}")
 
+        
 @app.post("/api/ingest")
 async def ingest(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     file_path = DATA_DIR / file.filename
