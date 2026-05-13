@@ -1122,19 +1122,43 @@ function Retrieval() {
   const [selected, setSelected] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  const results = executed ? CORPUS : [];
+  const results = executed ? realResults : [];
   const selectedChunk = results.find(r => r.rank === selected);
 
-  const run = (q) => {
+  const [realResults, setRealResults] = useState([]);
+
+  const run = async (q) => {
     const text = (q ?? query).trim();
     if (!text) return;
     setLoading(true);
     setExecuted("");
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/retrieve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: text }),
+      });
+      const data = await res.json();
+      const mapped = data.results.map((r, i) => ({
+        rank: r.rank,
+        file: r.source,
+        chunk: `chunk_${String(i).padStart(4, "0")}`,
+        page: `p. ${r.page}`,
+        tokens: Math.floor(r.text.length / 4),
+        chars: r.text.length,
+        mmr: r.score || 0.5,
+        rerank: r.score || 0.5,
+        neighbors: [],
+        text: r.text,
+      }));
+      setRealResults(mapped);
       setExecuted(text);
       setSelected(1);
+    } catch (err) {
+      setRealResults([]);
+    } finally {
       setLoading(false);
-    }, 700);
+    }
   };
 
   const tookMs = 142;

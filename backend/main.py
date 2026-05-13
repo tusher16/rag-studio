@@ -90,3 +90,27 @@ async def stats():
         }
     except Exception as e:
         return {"documents": 0, "chunks": 0, "vectors": 0, "last_run": "—"}
+    
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+
+@app.post("/api/retrieve")
+async def retrieve_api(req: RetrieveRequest):
+    from rag_v1.retrieval import load_vectorstore, build_retriever
+    
+    vectorstore = load_vectorstore()
+    retriever = build_retriever(vectorstore)
+    docs = retriever.invoke(req.query)
+    
+    results = []
+    for i, doc in enumerate(docs, 1):
+        results.append({
+            "rank": i,
+            "text": doc.page_content,
+            "source": doc.metadata.get("source", "unknown"),
+            "page": doc.metadata.get("page", "?"),
+            "score": doc.metadata.get("relevance_score", 0.0),
+        })
+    return {"results": results, "count": len(results)}
