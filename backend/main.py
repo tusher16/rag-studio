@@ -132,3 +132,91 @@ async def retrieve_api(req: RetrieveRequest):
             "score": float(doc.metadata.get("relevance_score", 0.0)),
         })
     return {"results": results, "count": len(results)}
+
+
+import json
+EVAL_RESULTS_FILE = Path("data/eval_results.json")
+
+EVAL_STATUS = {
+    "state": "idle",
+    "progress": 0,
+    "total": 0,
+    "current_question": "",
+    "results": None,
+}
+
+# Load previous results on startup
+if EVAL_RESULTS_FILE.exists():
+    try:
+        EVAL_STATUS["results"] = json.loads(EVAL_RESULTS_FILE.read_text())
+        EVAL_STATUS["state"] = "complete"
+    except Exception as e:
+        print(f"Could not load eval results: {e}")
+
+
+@app.post("/api/evaluate")
+async def evaluate_api(background_tasks: BackgroundTasks):
+    if EVAL_STATUS["state"] == "running":
+        return {"status": "already_running"}
+    
+    EVAL_STATUS["state"] = "running"
+    EVAL_STATUS["progress"] = 0
+    
+    def _run():
+        try:
+            from rag_v1.test_dataset import TEST_CASES
+            from rag_v1.retrieval import load_vectorstore, build_retriever
+            from datetime import datetime
+            
+            vs = load_vectorstore()
+            retriever = build_retriever(vs)
+            
+            EVAL_STATUS["total"] = len(TEST_CASES)
+            per_question = []
+            
+            for i, test in enumerate(TEST_CASES):
+                EVAL_STATUS["progress"] = i
+                EVAL_STATUS["current_question"] = test["question"][:60]
+                
+                answer = RAG_CHAIN.invoke(test["question"])
+                
+                gt = test["ground_truth"].lower()
+                ans = answer.lower()
+                gt_words = set(gt.split())
+                ans_words = set(ans.split())
+                overlap = len(gt_words & ans_words) / max(len(gt_words), 1)
+                
+                per_question.append({
+                    "id": i + 1,
+                    "q": test["question"],
+                    "a": answer[:200],
+                    "ground_truth": test["ground_truth"][:200],
+                    "score": round(overlap, 3),
+                    "status": "pass" if overlap > 0.5 else "warn" if overlap > 0.3 else "fail",
+                })
+            
+            EVAL_STATUS["progress"] = len(TEST_CASES)
+            results = {
+                "per_question": per_question,
+                "avg_score": round(sum(q["score"] for q in per_question) / len(per_question), 3),
+                "pass_count": sum(1 for q in per_question if q["status"] == "pass"),
+                "warn_count": sum(1 for q in per_question if q["status"] == "warn"),
+                "fail_count": sum(1 for q in per_question if q["status"] == "fail"),
+                "ran_at": datetime.utcnow().isoformat(),
+                "model": "qwen2.5:3b",
+                "total_questions": len(TEST_CASES),
+            }
+            EVAL_STATUS["results"] = results
+            EVAL_RESULTS_FILE.write_text(json.dumps(results, indent=2))
+            EVAL_STATUS["state"] = "complete"
+        except Exception as e:
+            EVAL_STATUS["state"] = "failed"
+            EVAL_STATUS["current_question"] = str(e)
+    
+    background_tasks.add_task(_run)
+    return {"status": "started"}
+
+
+@app.get("/api/evaluate/status")
+async def evaluate_status():
+    return EVAL_STATUS

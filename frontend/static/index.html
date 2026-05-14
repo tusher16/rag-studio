@@ -1411,23 +1411,37 @@ function ScoreCell({ value }) {
 function Evaluation({ phase, setPhase, progress, setProgress, results, setResults }) {
   const timerRef = React.useRef(null);
 
-  const start = () => {
+  const start = async () => {
     setPhase("running");
     setProgress(0);
-    let p = 0;
-    timerRef.current = setInterval(() => {
-      p += 1;
-      setProgress(p);
-      if (p >= 22) {
+    
+    await fetch("/api/evaluate", { method: "POST" });
+    
+    timerRef.current = setInterval(async () => {
+      const res = await fetch("/api/evaluate/status");
+      const data = await res.json();
+      setProgress(data.progress);
+      
+      if (data.state === "complete" || data.state === "failed") {
         clearInterval(timerRef.current);
-        setTimeout(() => setPhase("complete"), 350);
+        setResults(data.results);
+        setPhase(data.state);
       }
-    }, 140);
+    }, 3000);
   };
+
+  React.useEffect(() => {
+    fetch("/api/evaluate/status").then(r => r.json()).then(data => {
+      if (data.results) {
+        setResults(data.results);
+        setPhase("complete");
+      }
+    });
+  }, []);
 
   React.useEffect(() => () => clearInterval(timerRef.current), []);
 
-  return (
+  return (d
     <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ padding: "28px 32px 60px", maxWidth: 1320 }}>
         {/* Title row */}
@@ -1534,7 +1548,12 @@ function Evaluation({ phase, setPhase, progress, setProgress, results, setResult
               display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24,
               opacity: phase === "running" ? 0.55 : 1, transition: "opacity 0.2s",
             }}>
-              {EVAL_METRICS.map(m => <MetricCard key={m.key} m={m} />)}
+              {results ? [
+                { key: "score", label: "Average Score", score: results.avg_score, prev: 0, desc: "Word overlap with ground truth" },
+                { key: "pass", label: "Pass", score: results.pass_count / results.total_questions, prev: 0, desc: `${results.pass_count} questions passed` },
+                { key: "warn", label: "Warn", score: results.warn_count / results.total_questions, prev: 0, desc: `${results.warn_count} questions need review` },
+                { key: "fail", label: "Fail", score: results.fail_count / results.total_questions, prev: 0, desc: `${results.fail_count} questions failed` },
+              ].map(m => <MetricCard key={m.key} m={m} />) : EVAL_METRICS.map(m => <MetricCard key={m.key} m={m} />)}
             </div>
 
             {/* Results table */}
@@ -1567,7 +1586,7 @@ function Evaluation({ phase, setPhase, progress, setProgress, results, setResult
                 <div>Status</div>
               </div>
 
-              {EVAL_QUESTIONS.map((row, i) => (
+              {(results ? results.per_question.map(q => ({...q, f: q.score, r: q.score, s: q.status})) : EVAL_QUESTIONS).map((row, i) => (
                 <div key={row.id} style={{
                   display: "grid",
                   gridTemplateColumns: "32px minmax(0, 1.2fr) minmax(0, 1.4fr) 130px 130px 80px",
