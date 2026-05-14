@@ -859,9 +859,7 @@ function ChatInput({ onSend }) {
   );
 }
 
-function Chat() {
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
+function Chat({ messages, setMessages, loading, setLoading }) {
   const scrollRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -1116,12 +1114,7 @@ function FullChunkPanel({ chunk, query }) {
   );
 }
 
-function Retrieval() {
-  const [query, setQuery] = useState("");
-  const [executed, setExecuted] = useState("");
-  const [selected, setSelected] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [realResults, setRealResults] = useState([]);
+function Retrieval({ query, setQuery, executed, setExecuted, results: realResults, setResults: setRealResults, loading, setLoading, selected, setSelected }) {
 
   const results = executed ? realResults : [];
   const selectedChunk = results.find(r => r.rank === selected);
@@ -1415,9 +1408,7 @@ function ScoreCell({ value }) {
   );
 }
 
-function Evaluation() {
-  const [phase, setPhase] = useState("complete"); // "idle" | "running" | "complete"
-  const [progress, setProgress] = useState(0);
+function Evaluation({ phase, setPhase, progress, setProgress, results, setResults }) {
   const timerRef = React.useRef(null);
 
   const start = () => {
@@ -2125,7 +2116,21 @@ function Placeholder({ name }) {
 
 /* ---------- app ---------- */
 function App() {
-  const [active, setActive] = useState("docs");
+  const [active, setActive] = useState("pipeline");
+  
+  // Lifted state - persists across tab switches
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  
+  const [retrievalQuery, setRetrievalQuery] = useState("");
+  const [retrievalExecuted, setRetrievalExecuted] = useState("");
+  const [retrievalResults, setRetrievalResults] = useState([]);
+  const [retrievalLoading, setRetrievalLoading] = useState(false);
+  const [retrievalSelected, setRetrievalSelected] = useState(1);
+  
+  const [evalPhase, setEvalPhase] = useState("idle");
+  const [evalProgress, setEvalProgress] = useState(0);
+  const [evalResults, setEvalResults] = useState(null);
   const title = useMemo(() => NAV.find(n => n.id === active).label, [active]);
 
   return (
@@ -2136,11 +2141,11 @@ function App() {
         {active === "pipeline" ? (
           <div style={{ flex: 1, overflowY: "auto" }}><Pipeline /></div>
         ) : active === "chat" ? (
-          <Chat />
+          <Chat messages={chatMessages} setMessages={setChatMessages} loading={chatLoading} setLoading={setChatLoading} />
         ) : active === "retrieval" ? (
-          <Retrieval />
+          <Retrieval query={retrievalQuery} setQuery={setRetrievalQuery} executed={retrievalExecuted} setExecuted={setRetrievalExecuted} results={retrievalResults} setResults={setRetrievalResults} loading={retrievalLoading} setLoading={setRetrievalLoading} selected={retrievalSelected} setSelected={setRetrievalSelected} />
         ) : active === "evaluation" ? (
-          <Evaluation />
+          <Evaluation phase={evalPhase} setPhase={setEvalPhase} progress={evalProgress} setProgress={setEvalProgress} results={evalResults} setResults={setEvalResults} />
         ) : active === "docs" ? (
           <Docs />
         ) : (
