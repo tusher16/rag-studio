@@ -121,8 +121,8 @@ function Sidebar({ active, setActive }) {
         }}>
           <div style={{ width: 18, height: 18, borderRadius: 4, background: "#2a2333", display: "grid", placeItems: "center", color: "var(--purple)", fontSize: 10, fontWeight: 600 }}>AC</div>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.2 }}>acme-docs</div>
-            <div style={{ fontSize: 10.5, color: "var(--fg-3)", lineHeight: 1.2 }} className="mono">prod</div>
+            <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.2 }}>rag-studio</div>
+            <div style={{ fontSize: 10.5, color: "var(--fg-3)", lineHeight: 1.2 }} className="mono">v1</div>
           </div>
           <div style={{ marginLeft: "auto", color: "var(--fg-4)" }}>
             <Icon name="chevron" size={12} />
@@ -168,10 +168,7 @@ function Sidebar({ active, setActive }) {
           <button style={{ marginLeft: "auto", color: "var(--fg-4)" }}><Icon name="plus" size={12} /></button>
         </div>
         {[
-          { name: "support-kb", status: "green" },
-          { name: "internal-wiki", status: "green" },
-          { name: "product-docs", status: "yellow", active: true },
-          { name: "legacy-confluence", status: "fg-4" },
+          { name: "layoutlmv3.2404.10848v1", status: "green", active: true },
         ].map(p => (
           <button key={p.name} style={{
             display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 6,
@@ -208,11 +205,9 @@ function Header({ title }) {
       display: "flex", alignItems: "center", gap: 16, background: "var(--bg)", position: "sticky", top: 0, zIndex: 5
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--fg-3)", fontSize: 12.5 }}>
-        <span className="mono">acme-docs</span>
+        <span className="mono">rag-studio</span>
         <span style={{ color: "var(--fg-4)" }}>/</span>
         <span style={{ color: "var(--fg)", fontWeight: 500 }}>{title}</span>
-        <span style={{ color: "var(--fg-4)" }}>/</span>
-        <span className="mono">product-docs</span>
       </div>
 
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
@@ -225,13 +220,14 @@ function Header({ title }) {
           <span>Search pipelines, runs, chunks…</span>
           <span className="mono" style={{ marginLeft: "auto", fontSize: 10.5, border: "1px solid var(--line-2)", padding: "0 5px", borderRadius: 3 }}>⌘K</span>
         </div>
-        <button style={{
+        <a href="https://github.com/tusher16/rag-studio" target="_blank" rel="noopener noreferrer" style={{
           display: "flex", alignItems: "center", gap: 6, padding: "6px 10px",
-          border: "1px solid var(--line)", borderRadius: 6, color: "var(--fg-2)", fontSize: 12
+          border: "1px solid var(--line)", borderRadius: 6, color: "var(--fg-2)", fontSize: 12,
+          textDecoration: "none",
         }}>
           <Icon name="branch" size={13} />
-          <span className="mono">main</span>
-        </button>
+          <span className="mono">github</span>
+        </a>
         <input
           type="file"
           id="file-upload"
@@ -339,16 +335,15 @@ function Arrow({ active }) {
 /* ---------- pipeline page ---------- */
 const STAGES = [
   {
-    id: "source", kind: "Source", name: "GitHub: acme/docs", icon: "source", status: "ready", meta: "synced 4m ago",
+    id: "source", kind: "Source", name: "Local upload: PDF", icon: "source", status: "ready", meta: "PDF ingestion",
     config: [
-      ["type", "github", "muted"],
-      ["branch", "main"],
-      ["paths", "/docs/**"],
-      ["files", "1,284"],
+      ["type", "pdf", "muted"],
+      ["loader", "pdfplumber"],
+      ["chars/page", "~3000"],
     ],
   },
   {
-    id: "chunker", kind: "Chunker", name: "Recursive", icon: "chunk", status: "ready", meta: "8.2k chunks",
+    id: "chunker", kind: "Chunker", name: "Recursive", icon: "chunk", status: "ready", meta: "RecursiveCharacterTextSplitter",
     config: [
       ["strategy", "recursive", "muted"],
       ["chunk_size", "512", "accent"],
@@ -357,21 +352,21 @@ const STAGES = [
     ],
   },
   {
-    id: "embedder", kind: "Embedder", name: "OpenAI 3-large", icon: "embed", status: "processing", meta: "6.1k / 8.2k",
+    id: "embedder", kind: "Embedder", name: "BGE-M3", icon: "embed", status: "ready", meta: "BAAI/bge-m3",
     config: [
-      ["model", "te-3-large", "muted"],
-      ["dim", "3072", "accent"],
-      ["batch", "100"],
-      ["tokens", "1.2M"],
+      ["model", "BAAI/bge-m3", "muted"],
+      ["dim", "1024", "accent"],
+      ["device", "cpu"],
+      ["normalize", "true"],
     ],
   },
   {
-    id: "store", kind: "Vector DB", name: "Qdrant", icon: "db", status: "ready", meta: "collection: prod",
+    id: "store", kind: "Vector DB", name: "ChromaDB", icon: "db", status: "ready", meta: "collection: production_rag",
     config: [
-      ["provider", "qdrant", "muted"],
+      ["provider", "chromadb", "muted"],
       ["metric", "cosine"],
-      ["vectors", "847,213"],
       ["index", "HNSW"],
+      ["persist", "./chroma_db"],
     ],
   },
 ];
@@ -388,13 +383,6 @@ function Pipeline() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Pipeline</h1>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 8px",
-              border: "1px solid var(--line-2)", borderRadius: 999, fontSize: 11, color: "var(--yellow)"
-            }}>
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--yellow)" }} />
-              Processing
-            </span>
           </div>
           <div style={{ color: "var(--fg-3)", fontSize: 13 }}>
             Define how documents flow from source to vector store. Changes apply on next run.
@@ -447,143 +435,22 @@ function Pipeline() {
             <span>Pending</span>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
-            <span className="mono">throughput: <span style={{ color: "var(--fg)" }}>412 chunks/s</span></span>
-            <span className="mono">cost: <span style={{ color: "var(--fg)" }}>$0.018 / 1k</span></span>
+            <span className="mono">runtime: <span style={{ color: "var(--fg)" }}>local CPU</span></span>
+            <span className="mono">cost: <span style={{ color: "var(--fg)" }}>$0.00</span></span>
           </div>
         </div>
       </div>
 
-      {/* Two-column bottom: Runs + Recent chunks */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 20 }}>
-        <RunsPanel />
-        <SamplePanel />
-      </div>
     </div>
-  );
-}
-
-function RunsPanel() {
-  const runs = [
-    { id: "run_8aQ2", status: "processing", branch: "main", commit: "a4f21c9", dur: "—", chunks: "6,103", time: "running", who: "ci-bot" },
-    { id: "run_8aPx", status: "ready",      branch: "main", commit: "7be902d", dur: "3m 24s", chunks: "8,213", time: "4m ago", who: "ci-bot" },
-    { id: "run_8aPm", status: "ready",      branch: "main", commit: "1f0c4a8", dur: "3m 19s", chunks: "8,201", time: "1h ago", who: "j.kim" },
-    { id: "run_8aPj", status: "failed",     branch: "feat/openai-v3", commit: "9d3a7b2", dur: "0m 42s", chunks: "—", time: "3h ago", who: "l.tran" },
-    { id: "run_8aPg", status: "ready",      branch: "main", commit: "c4e8a01", dur: "3m 12s", chunks: "8,176", time: "yesterday", who: "ci-bot" },
-  ];
-  const statusColor = { ready: "var(--green)", processing: "var(--yellow)", failed: "var(--red)" };
-
-  return (
-    <section style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)", overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Recent runs</div>
-        <button style={{ marginLeft: "auto", color: "var(--fg-3)", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-          View all <Icon name="chevron" size={12} />
-        </button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "auto auto 1fr auto auto", padding: "0 16px", fontSize: 11, color: "var(--fg-4)", borderBottom: "1px solid var(--line)", height: 32, alignItems: "center", columnGap: 16, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 500 }}>
-        <div>Run</div>
-        <div>Branch</div>
-        <div>Duration</div>
-        <div style={{ textAlign: "right" }}>Chunks</div>
-        <div style={{ textAlign: "right" }}>When</div>
-      </div>
-      {runs.map(r => (
-        <div key={r.id} style={{
-          display: "grid", gridTemplateColumns: "auto auto 1fr auto auto",
-          padding: "10px 16px", fontSize: 12.5, alignItems: "center",
-          borderBottom: "1px solid var(--line)", columnGap: 16
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor[r.status] }} />
-            <span className="mono" style={{ color: "var(--fg)" }}>{r.id}</span>
-          </div>
-          <div className="mono" style={{ color: "var(--fg-2)", fontSize: 12 }}>{r.branch}<span style={{ color: "var(--fg-4)" }}> @ {r.commit}</span></div>
-          <div className="mono" style={{ color: "var(--fg-3)" }}>{r.dur}</div>
-          <div className="mono" style={{ color: "var(--fg-2)", textAlign: "right" }}>{r.chunks}</div>
-          <div style={{ color: "var(--fg-3)", textAlign: "right", display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-            <span>{r.time}</span>
-            <span className="mono" style={{ color: "var(--fg-4)" }}>· {r.who}</span>
-          </div>
-        </div>
-      ))}
-    </section>
-  );
-}
-
-function SamplePanel() {
-  return (
-    <section style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg-1)", overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Sample chunk</div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>chunk_0294 / 8213</span>
-          <button style={{ color: "var(--fg-3)" }}><Icon name="refresh" size={13} /></button>
-        </div>
-      </div>
-
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 11, color: "var(--fg-4)", marginBottom: 8, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500 }}>Text</div>
-        <div className="mono" style={{
-          fontSize: 12, color: "var(--fg-2)", background: "var(--bg-2)",
-          padding: "12px 14px", borderRadius: 6, border: "1px solid var(--line)",
-          lineHeight: 1.55, whiteSpace: "pre-wrap"
-        }}>
-{`# Authentication
-
-To authenticate requests, pass an API key in the
-Authorization header as \`Bearer <key>\`. Keys are
-scoped to a single workspace and can be rotated
-from the dashboard without invalidating sessions.`}
-        </div>
-      </div>
-
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
-        {[
-          ["tokens", "127"],
-          ["chars", "612"],
-          ["source", "docs/api/auth.md"],
-          ["chunk_idx", "3 of 11"],
-        ].map(([k, v]) => (
-          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-            <span className="mono" style={{ color: "var(--fg-3)" }}>{k}</span>
-            <span className="mono" style={{ color: "var(--fg)" }}>{v}</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ padding: "12px 16px" }}>
-        <div style={{ fontSize: 11, color: "var(--fg-4)", marginBottom: 8, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500, display: "flex", alignItems: "center" }}>
-          Embedding
-          <span className="mono" style={{ marginLeft: "auto", color: "var(--fg-3)", textTransform: "none", letterSpacing: 0 }}>float32 · dim 3072</span>
-        </div>
-        <div className="mono" style={{
-          fontSize: 11.5, color: "var(--fg-2)", background: "var(--bg-2)",
-          padding: "10px 12px", borderRadius: 6, border: "1px solid var(--line)",
-          lineHeight: 1.55, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
-        }}>
-          [<span style={{ color: "var(--accent)" }}>0.0124</span>, <span style={{ color: "var(--accent)" }}>-0.0837</span>, <span style={{ color: "var(--accent)" }}>0.2104</span>, <span style={{ color: "var(--accent)" }}>-0.0461</span>, <span style={{ color: "var(--accent)" }}>0.1928</span>, <span style={{ color: "var(--accent)" }}>0.0742</span>, <span style={{ color: "var(--accent)" }}>-0.1503</span>, <span style={{ color: "var(--accent)" }}>0.0218</span>, <span style={{ color: "var(--fg-4)" }}>… 3064 more</span>]
-        </div>
-
-        {/* mini bar viz */}
-        <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 36, marginTop: 12 }}>
-          {Array.from({ length: 64 }).map((_, i) => {
-            const h = 6 + Math.abs(Math.sin(i * 0.71) + Math.cos(i * 0.31)) * 14;
-            return <div key={i} style={{
-              flex: 1, height: h, background: i % 7 === 0 ? "var(--accent)" : "var(--line-2)", opacity: 0.85, borderRadius: 1
-            }} />;
-          })}
-        </div>
-      </div>
-    </section>
   );
 }
 
 /* ---------- chat ---------- */
 const SUGGESTIONS = [
-  { q: "How do I authenticate API requests?", hint: "docs/api/auth.md" },
-  { q: "What chunking strategies are supported?", hint: "docs/pipelines/chunking.md" },
-  { q: "Rate limits on the embeddings endpoint", hint: "docs/api/limits.md" },
-  { q: "How does HNSW indexing work in Qdrant?", hint: "docs/storage/qdrant.md" },
+  { q: "What backbone model is used in this paper?", hint: "2404.10848v1.pdf" },
+  { q: "What is the best F1 score on FUNSD?", hint: "2404.10848v1.pdf" },
+  { q: "What is Entity Marker technique?", hint: "2404.10848v1.pdf" },
+  { q: "How many parameters does LayoutLMv3 large have?", hint: "2404.10848v1.pdf" },
 ];
 
 const ANSWERS = {
@@ -677,7 +544,7 @@ function AssistantMessage({ msg }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>RAG Studio</span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>· gpt-4o · 1.4s · 4 sources</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>· qwen2.5:3b · {msg.citations.length} sources</span>
         </div>
         <div style={{ fontSize: 14 }}>{renderText(msg.text)}</div>
 
@@ -717,7 +584,7 @@ function TypingIndicator() {
             <span className="dot-2" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)" }} />
             <span className="dot-3" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)" }} />
           </span>
-          <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-4)" }}>retrieving · embedding query · top_k=4 · reranking</span>
+          <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-4)" }}>retrieving · embedding query · top_k=20 · reranking</span>
         </div>
       </div>
     </div>
@@ -741,7 +608,7 @@ function EmptyState({ onPick }) {
         Ask a question about your documents
       </div>
       <div style={{ color: "var(--fg-3)", fontSize: 13, maxWidth: 460, marginBottom: 28 }}>
-        Queries are answered using the <span className="mono" style={{ color: "var(--fg-2)" }}>product-docs</span> pipeline.
+        Queries are answered using the <span className="mono" style={{ color: "var(--fg-2)" }}>production_rag</span> pipeline.
         Responses include source citations from the indexed corpus.
       </div>
 
@@ -765,9 +632,9 @@ function EmptyState({ onPick }) {
       </div>
 
       <div style={{ marginTop: 28, display: "flex", gap: 18, fontSize: 11.5, color: "var(--fg-4)" }}>
-        <span className="mono">top_k = 4</span>
-        <span className="mono">model = gpt-4o</span>
-        <span className="mono">rerank = cohere-v3</span>
+        <span className="mono">top_k = 20</span>
+        <span className="mono">model = qwen2.5:3b</span>
+        <span className="mono">rerank = ms-marco-MultiBERT</span>
       </div>
     </div>
   );
@@ -819,7 +686,7 @@ function ChatInput({ onSend }) {
               border: "1px solid var(--line)", borderRadius: 5, color: "var(--fg-2)", fontSize: 11.5
             }}>
               <span style={{ color: "var(--fg-3)" }} className="mono">model:</span>
-              <span className="mono">gpt-4o</span>
+              <span className="mono">qwen2.5:3b</span>
               <Icon name="chevron" size={11} />
             </button>
             <button style={{
@@ -827,7 +694,7 @@ function ChatInput({ onSend }) {
               border: "1px solid var(--line)", borderRadius: 5, color: "var(--fg-2)", fontSize: 11.5
             }}>
               <span style={{ color: "var(--fg-3)" }} className="mono">top_k:</span>
-              <span className="mono">4</span>
+              <span className="mono">20</span>
             </button>
             <button style={{
               display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
@@ -917,61 +784,6 @@ function Chat({ messages, setMessages, loading, setLoading }) {
 }
 
 /* ---------- retrieval ---------- */
-const CORPUS = [
-  {
-    rank: 1, file: "docs/storage/qdrant.md", chunk: "chunk_0731", page: "§ 3.1",
-    tokens: 184, chars: 912, mmr: 0.892, rerank: 0.941, neighbors: ["chunk_0730", "chunk_0732"],
-    text: `HNSW (Hierarchical Navigable Small World) is the default approximate nearest-neighbor index used by Qdrant for high-dimensional vector search. It builds a multi-layer graph where each node connects to a bounded number of neighbors, with the upper layers acting as a long-range routing structure and the lowest layer containing every vector in the collection.
-
-Searches start at the top layer from a fixed entry point and greedily descend layer by layer, refining the candidate set at each step until the bottom layer is reached. This gives logarithmic search complexity in practice while keeping recall close to exact KNN.
-
-Two parameters dominate the trade-off: \`M\` (max connections per node) controls graph quality and memory; \`ef_construct\` controls build-time accuracy. At query time, \`ef\` is the dynamic candidate list size — raise it to trade latency for recall.`,
-  },
-  {
-    rank: 2, file: "docs/storage/qdrant.md", chunk: "chunk_0732", page: "§ 3.2",
-    tokens: 156, chars: 781, mmr: 0.871, rerank: 0.918, neighbors: ["chunk_0731", "chunk_0733"],
-    text: `Recommended HNSW defaults for production workloads under 10M vectors: \`M=16\`, \`ef_construct=128\`, \`ef=64\` at query time. Bumping \`ef\` to 128–256 typically improves recall@10 by 1–3 points at roughly 2× query latency.
-
-For workloads above 50M vectors, prefer \`M=32\` and \`ef_construct=256\` — the higher graph degree pays off in recall, and the one-time build cost is amortized over millions of queries.
-
-If you observe recall drift after large upserts, schedule an \`optimize\` operation. Qdrant supports online optimization without blocking reads.`,
-  },
-  {
-    rank: 3, file: "docs/pipelines/vectordb.md", chunk: "chunk_0412", page: "§ 5",
-    tokens: 142, chars: 689, mmr: 0.834, rerank: 0.861, neighbors: ["chunk_0411", "chunk_0413"],
-    text: `Qdrant exposes the HNSW configuration per-collection at create time and per-segment thereafter. Use the \`hnsw_config\` block on \`POST /collections/{name}\` to set \`m\`, \`ef_construct\`, \`full_scan_threshold\`, and \`on_disk\` placement.
-
-The \`on_disk\` flag is significant for memory-constrained deployments — it keeps the graph in mmap'd storage rather than RAM, trading ~3× query latency for ~80% memory reduction. Combine with payload indexing for filterable search.`,
-  },
-  {
-    rank: 4, file: "docs/storage/index-tuning.md", chunk: "chunk_0089", page: "§ 1.4",
-    tokens: 128, chars: 612, mmr: 0.801, rerank: 0.792, neighbors: ["chunk_0088", "chunk_0090"],
-    text: `Benchmarks show HNSW outperforming IVF-PQ on recall@10 for embeddings produced by transformer models with dim ≥ 768. The gap widens at dim 1536+ because PQ's coarse quantization loses too much resolution.
-
-If you must use PQ for memory reasons, prefer \`pq_m=64, pq_nbits=8\` with a \`refine=true\` reranking step against full-precision vectors stored on disk.`,
-  },
-  {
-    rank: 5, file: "docs/api/search.md", chunk: "chunk_0254", page: "§ 2",
-    tokens: 117, chars: 558, mmr: 0.762, rerank: 0.724, neighbors: ["chunk_0253", "chunk_0255"],
-    text: `The \`/collections/{name}/points/search\` endpoint accepts an optional \`params\` block where you can override \`ef\` per request: \`{"params": {"hnsw_ef": 128}}\`. This is the recommended lever for raising recall on user-facing queries without re-tuning the whole collection.
-
-For batch evaluation, send the same payload via \`search/batch\` — Qdrant parallelizes graph traversal across the batch.`,
-  },
-  {
-    rank: 6, file: "docs/storage/qdrant.md", chunk: "chunk_0728", page: "§ 3",
-    tokens: 104, chars: 489, mmr: 0.741, rerank: 0.688, neighbors: ["chunk_0727", "chunk_0729"],
-    text: `Qdrant supports three index types: HNSW (default), flat (exact KNN, for collections under 10k points), and sparse vectors via inverted lists for BM25-style hybrid retrieval.
-
-The collection-level \`hnsw_config.full_scan_threshold\` lets small filtered subsets fall back to exact search automatically, avoiding the recall cliff that HNSW exhibits under aggressive filters.`,
-  },
-  {
-    rank: 7, file: "docs/concepts/ann.md", chunk: "chunk_0510", page: "§ 4.1",
-    tokens: 96, chars: 442, mmr: 0.722, rerank: 0.641, neighbors: ["chunk_0509", "chunk_0511"],
-    text: `Approximate nearest neighbor (ANN) algorithms trade exactness for speed. The three dominant families are graph-based (HNSW, NSG), tree-based (Annoy), and quantization-based (IVF, PQ, ScaNN).
-
-Graph methods consistently lead recall/QPS benchmarks for embeddings above 256 dimensions but require more build memory than quantization approaches.`,
-  },
-];
 
 function ScoreBar({ label, value, accent = "var(--accent)" }) {
   return (
@@ -1169,13 +981,13 @@ function Retrieval({ query, setQuery, executed, setExecuted, results: realResult
         {/* Config bar */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <ConfigChip k="top_k" v="20" />
-          <ConfigChip k="rerank_top_n" v="7" />
-          <ConfigChip k="embedding_model" v="te-3-large" />
-          <ConfigChip k="rerank_model" v="cohere-rerank-v3" />
-          <ConfigChip k="mmr_lambda" v="0.5" />
+          <ConfigChip k="rerank_top_n" v="10" />
+          <ConfigChip k="embedding_model" v="BAAI/bge-m3" />
+          <ConfigChip k="rerank_model" v="ms-marco-MultiBERT-L-12" />
+          <ConfigChip k="mmr_lambda" v="0.7" />
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, color: "var(--fg-3)", fontSize: 12 }}>
             <span>collection:</span>
-            <span className="mono" style={{ color: "var(--fg)" }}>product-docs</span>
+            <span className="mono" style={{ color: "var(--fg)" }}>production_rag</span>
             <span style={{ color: "var(--green)" }}>●</span>
           </div>
         </div>
@@ -1190,7 +1002,7 @@ function Retrieval({ query, setQuery, executed, setExecuted, results: realResult
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") run(); }}
-            placeholder="Query your collection — e.g. how does HNSW indexing work in Qdrant?"
+            placeholder="Query your collection — e.g. what backbone model is used in LayoutLMv3?"
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
               color: "var(--fg)", fontSize: 14, fontFamily: "inherit", padding: "4px 0",
@@ -1235,10 +1047,10 @@ function Retrieval({ query, setQuery, executed, setExecuted, results: realResult
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: 620 }}>
               {[
-                "how does HNSW indexing work in Qdrant?",
-                "embedding model dimensions",
-                "chunk overlap recommendations",
-                "filter by metadata in search",
+                "what backbone model is used in LayoutLMv3?",
+                "best F1 score on FUNSD",
+                "what is Entity Marker technique?",
+                "LayoutLMv3 large parameter count",
               ].map(s => (
                 <button key={s} onClick={() => { setQuery(s); run(s); }}
                   style={{
@@ -1275,7 +1087,7 @@ function Retrieval({ query, setQuery, executed, setExecuted, results: realResult
                   </div>
                   <div style={{ fontSize: 13, color: "var(--fg-2)" }}>Retrieving chunks…</div>
                   <div className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>
-                    embedding query · MMR top-20 · reranking top-10
+                    embedding query · top-20 · reranking top-10
                   </div>
                   <div style={{ width: "60%", height: 3, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden", marginTop: 8 }}>
                     <div style={{
@@ -1312,28 +1124,28 @@ const EVAL_METRICS = [
 ];
 
 const EVAL_QUESTIONS = [
-  { id: 1,  q: "How do I authenticate API requests?",                        a: "Use the Authorization header as `Bearer <key>`. Keys are workspace-scoped and can be rotated…",      f: 0.94, r: 0.91, s: "pass" },
-  { id: 2,  q: "What's the rate limit on the embeddings endpoint?",          a: "60 requests/sec per workspace, with bursts of 120. Returns 429 with Retry-After on overage.",          f: 0.97, r: 0.95, s: "pass" },
-  { id: 3,  q: "Explain recursive chunking strategy",                        a: "Splits text by paragraph, then sentence, then token, falling back to smaller separators…",              f: 0.89, r: 0.88, s: "pass" },
-  { id: 4,  q: "How does HNSW indexing work in Qdrant?",                     a: "Builds a multi-layer graph for approximate nearest-neighbor search with logarithmic complexity…",     f: 0.93, r: 0.90, s: "pass" },
-  { id: 5,  q: "What embedding models are supported?",                       a: "OpenAI te-3-small, te-3-large, Voyage-3, and Cohere embed-multilingual-v3 are first-class.",            f: 0.91, r: 0.87, s: "pass" },
-  { id: 6,  q: "Can I filter search results by metadata?",                   a: "Yes — pass a `filter` block with field/op/value. Filters use payload indexing on the storage layer.",   f: 0.88, r: 0.84, s: "pass" },
-  { id: 7,  q: "What's the maximum chunk size?",                             a: "Up to the embedding model's context window, but 512–1024 tokens is recommended for retrieval quality.", f: 0.95, r: 0.92, s: "pass" },
-  { id: 8,  q: "How do I rotate API keys without downtime?",                 a: "Issue a new key first, deploy with both keys valid, then revoke the old one. Sessions are unaffected.", f: 0.92, r: 0.89, s: "pass" },
-  { id: 9,  q: "Difference between MMR and rerank scoring",                  a: "MMR balances similarity with diversity at retrieval; rerank uses a cross-encoder for relevance…",       f: 0.86, r: 0.83, s: "pass" },
-  { id: 10, q: "How to handle PDF documents?",                               a: "Use the built-in PDF loader which extracts text via pdfplumber and preserves page numbers…",            f: 0.84, r: 0.79, s: "warn" },
-  { id: 11, q: "What's stored in the trace logs?",                           a: "Query, retrieved chunks with scores, LLM completion, token counts, and latencies per pipeline stage.", f: 0.96, r: 0.93, s: "pass" },
-  { id: 12, q: "Cost per 1k tokens for te-3-large",                          a: "$0.13 per 1M input tokens at the OpenAI public price. Cached embeddings are free on re-retrieval.",     f: 0.62, r: 0.71, s: "fail" },
-  { id: 13, q: "How to set up hybrid BM25 + dense search?",                  a: "Enable sparse vectors on the collection and combine scores with the rrf or weighted_sum fusion mode.",  f: 0.88, r: 0.86, s: "pass" },
-  { id: 14, q: "What happens during pipeline re-runs?",                      a: "Only changed documents are re-embedded; unchanged content keeps its existing vectors and metadata.",     f: 0.90, r: 0.88, s: "pass" },
-  { id: 15, q: "How do I export retrieval results?",                         a: "POST /v1/eval/export returns JSONL with question, retrieved chunks, scores, and ground truth labels.",   f: 0.83, r: 0.78, s: "warn" },
-  { id: 16, q: "Can I A/B test two pipelines?",                              a: "Create both as named pipelines, then route traffic via the Experiment block on the chat endpoint…",     f: 0.87, r: 0.85, s: "pass" },
-  { id: 17, q: "How is chunk overlap configured?",                           a: "Set `overlap` (in tokens) on the chunker stage; default 64. Higher overlap improves recall on boundaries.", f: 0.94, r: 0.90, s: "pass" },
-  { id: 18, q: "What's the SLA on cold-start queries?",                      a: "Median p50 ~ 280ms cold, ~ 95ms warm. Cold-start applies after 5min of pipeline inactivity.",            f: 0.79, r: 0.74, s: "warn" },
-  { id: 19, q: "How to debug a low-faithfulness answer?",                    a: "Open the trace, compare retrieved chunks to the generated answer, and check rerank scores per source.", f: 0.91, r: 0.89, s: "pass" },
-  { id: 20, q: "Are embeddings stored encrypted at rest?",                   a: "Yes — AES-256 with per-workspace keys. Bring-your-own-KMS is supported on enterprise plans.",           f: 0.95, r: 0.92, s: "pass" },
-  { id: 21, q: "What's the latest version of the SDK?",                      a: "v2.4.0, released last week. Notable: streaming retrieval and async batch embeddings.",                   f: 0.55, r: 0.68, s: "fail" },
-  { id: 22, q: "How do I configure on-disk HNSW storage?",                   a: "Set `hnsw_config.on_disk: true` on the collection. Reduces memory ~80% at ~3× query latency.",          f: 0.93, r: 0.88, s: "pass" },
+  { id: 1,  q: "What backbone model is used in LayoutLMv3?",                 a: "LayoutLMv3 uses a unified transformer with both text and image embeddings as input…",                f: 0.78, r: 0.78, s: "pass" },
+  { id: 2,  q: "What is the best F1 score on FUNSD?",                        a: "LayoutLMv3-large achieves a F1 score of 92.08 on the FUNSD dataset.",                                  f: 0.81, r: 0.81, s: "pass" },
+  { id: 3,  q: "How many parameters does LayoutLMv3 large have?",            a: "LayoutLMv3-large has 368M parameters.",                                                                f: 0.74, r: 0.74, s: "pass" },
+  { id: 4,  q: "What is Entity Marker technique?",                           a: "Entity Marker is a technique that uses special tokens to mark entity boundaries in input text…",       f: 0.68, r: 0.68, s: "warn" },
+  { id: 5,  q: "What pre-training objectives are used?",                     a: "Three objectives: masked language modeling, masked image modeling, and word-patch alignment.",         f: 0.72, r: 0.72, s: "pass" },
+  { id: 6,  q: "What dataset is used for pre-training?",                     a: "LayoutLMv3 is pre-trained on the IIT-CDIP Test Collection 1.0 with 11M document images.",              f: 0.65, r: 0.65, s: "warn" },
+  { id: 7,  q: "How does LayoutLMv3 differ from LayoutLMv2?",                a: "LayoutLMv3 uses image patches instead of CNN features and adds word-patch alignment as a new objective.", f: 0.61, r: 0.61, s: "warn" },
+  { id: 8,  q: "What is word-patch alignment?",                              a: "Word-patch alignment predicts whether image patches are masked for the corresponding text tokens.",     f: 0.55, r: 0.55, s: "fail" },
+  { id: 9,  q: "What downstream tasks were evaluated?",                      a: "Form understanding (FUNSD), receipt understanding (CORD), document classification (RVL-CDIP), and DocVQA.", f: 0.79, r: 0.79, s: "pass" },
+  { id: 10, q: "What is the accuracy on RVL-CDIP?",                          a: "LayoutLMv3-large achieves 95.93% accuracy on the RVL-CDIP document classification benchmark.",         f: 0.71, r: 0.71, s: "pass" },
+  { id: 11, q: "What patch size is used for images?",                        a: "LayoutLMv3 uses 16x16 patch size for the image input, similar to ViT.",                                f: 0.58, r: 0.58, s: "warn" },
+  { id: 12, q: "How are 2D positions encoded?",                              a: "2D positions are encoded using separate embeddings for x and y coordinates plus width and height.",   f: 0.62, r: 0.62, s: "warn" },
+  { id: 13, q: "What is the masking ratio for MLM?",                         a: "The masking ratio for masked language modeling is 30%, following BERT's recipe.",                      f: 0.49, r: 0.49, s: "fail" },
+  { id: 14, q: "What learning rate is used for pre-training?",               a: "Pre-training uses a peak learning rate of 1e-4 with linear warmup over 5% of training steps.",         f: 0.66, r: 0.66, s: "warn" },
+  { id: 15, q: "How long was the model pre-trained?",                        a: "LayoutLMv3 was pre-trained for 500k steps with batch size 2048 on 64 V100 GPUs.",                     f: 0.57, r: 0.57, s: "warn" },
+  { id: 16, q: "What tokenizer does LayoutLMv3 use?",                        a: "LayoutLMv3 uses RoBERTa's byte-pair encoding (BPE) tokenizer with a 50k vocabulary.",                 f: 0.73, r: 0.73, s: "pass" },
+  { id: 17, q: "What is the F1 on CORD?",                                    a: "LayoutLMv3-large achieves 97.46 F1 on the CORD receipt understanding benchmark.",                     f: 0.69, r: 0.69, s: "warn" },
+  { id: 18, q: "What is masked image modeling?",                             a: "Masked image modeling predicts visual tokens for masked image patches, similar to BEiT.",              f: 0.64, r: 0.64, s: "warn" },
+  { id: 19, q: "What ANLS score on DocVQA?",                                 a: "LayoutLMv3-large achieves 83.37 ANLS on the DocVQA visual question answering benchmark.",             f: 0.52, r: 0.52, s: "fail" },
+  { id: 20, q: "How does it compare to DocFormer?",                          a: "LayoutLMv3 outperforms DocFormer on FUNSD, CORD, and RVL-CDIP while using fewer parameters.",         f: 0.58, r: 0.58, s: "warn" },
+  { id: 21, q: "What is segment-level position embedding?",                  a: "Segment-level position embedding assigns positions per text segment instead of per token.",            f: 0.45, r: 0.45, s: "fail" },
+  { id: 22, q: "What is the input sequence length?",                         a: "The maximum input sequence length is 512 text tokens plus 196 image patches (for 224x224 input).",     f: 0.63, r: 0.63, s: "warn" },
 ];
 
 function MetricCard({ m }) {
@@ -1449,8 +1261,7 @@ function Evaluation({ phase, setPhase, progress, setProgress, results, setResult
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Evaluation</h1>
             <div style={{ color: "var(--fg-3)", fontSize: 13, marginTop: 4, maxWidth: 540 }}>
-              Runs <span className="mono" style={{ color: "var(--fg-2)" }}>22</span> test questions through RAGAS metrics:
-              faithfulness, answer relevancy, context precision, and context recall.
+              Word overlap with ground truth on <span className="mono" style={{ color: "var(--fg-2)" }}>22</span> LayoutLMv3 paper questions.
             </div>
           </div>
 
@@ -1460,8 +1271,8 @@ function Evaluation({ phase, setPhase, progress, setProgress, results, setResult
               {[
                 ["Last run", "Mar 14, 09:12"],
                 ["Duration", "3m 04s"],
-                ["Model", "gpt-4o"],
-                ["Suite", "ragas-v0.3"],
+                ["Model", "qwen2.5:3b"],
+                ["Suite", "word-overlap-v1"],
               ].map(([k, v]) => (
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                   <span style={{ fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 500 }}>{k}</span>
@@ -1483,8 +1294,8 @@ function Evaluation({ phase, setPhase, progress, setProgress, results, setResult
             </div>
             <div style={{ fontSize: 12, color: "var(--fg-3)" }}>
               {phase === "running"
-                ? <>Evaluating against <span className="mono" style={{ color: "var(--fg-2)" }}>product-docs</span> — embed query, retrieve top_k, generate, score.</>
-                : <>Test set <span className="mono" style={{ color: "var(--fg-2)" }}>core-22.jsonl</span> · pipeline <span className="mono" style={{ color: "var(--fg-2)" }}>product-docs</span> · judge <span className="mono" style={{ color: "var(--fg-2)" }}>gpt-4o</span></>
+                ? <>Evaluating against <span className="mono" style={{ color: "var(--fg-2)" }}>production_rag</span> — embed query, retrieve top_k, generate, score.</>
+                : <>Test set <span className="mono" style={{ color: "var(--fg-2)" }}>layoutlmv3-22.jsonl</span> · pipeline <span className="mono" style={{ color: "var(--fg-2)" }}>production_rag</span> · metric <span className="mono" style={{ color: "var(--fg-2)" }}>word-overlap</span></>
               }
             </div>
 
@@ -1621,22 +1432,22 @@ const DOCS_SECTIONS = [
 ];
 
 const DOC_VERSIONS = [
-  { v: "RAG v1",     state: "current", date: "Released Mar 2026", note: "Single-pipeline RAG with rerank, RAGAS eval, traces.", id: "v1" },
-  { v: "RAG v2",     state: "next",    date: "Q3 2026",            note: "Hybrid BM25 + dense, streaming retrieval, BYO judge.", id: "v2" },
+  { v: "RAG v1",     state: "current", date: "Released May 2026", note: "Local PDF RAG with bge-m3 + FlashrankRerank + qwen2.5:3b. Word-overlap eval at 0.632.", id: "v1" },
+  { v: "RAG v2",     state: "next",    date: "Q3 2026",            note: "Hybrid BM25 + dense, streaming retrieval, multi-PDF collections.", id: "v2" },
   { v: "Graph RAG",  state: "planned", date: "Q4 2026 / 2027",     note: "Knowledge-graph extraction with multi-hop reasoning.", id: "v3" },
 ];
 
 const TECH_STACK = [
-  ["Source loader",  "GitHub via @octokit",  "20.0.2"],
-  ["Chunker",        "LangChain RecursiveCharacterTextSplitter", "0.2.10"],
-  ["Embedding",      "OpenAI text-embedding-3-large", "—"],
-  ["Vector store",   "Qdrant (HNSW, on-disk)", "1.9.0"],
-  ["Reranker",       "Cohere rerank-v3", "v3"],
-  ["LLM",            "OpenAI gpt-4o", "2024-08-06"],
-  ["Eval suite",     "RAGAS",  "0.3.4"],
-  ["Tracing",        "OpenTelemetry → Tempo", "1.27.0"],
-  ["API server",     "FastAPI", "0.115.0"],
-  ["Runtime",        "Python", "3.11.6"],
+  ["Source loader",  "Local PDF upload (pdfplumber)", "—"],
+  ["Chunker",        "LangChain RecursiveCharacterTextSplitter", "0.2.x"],
+  ["Embedding",      "BAAI/bge-m3 (sentence-transformers)", "—"],
+  ["Vector store",   "ChromaDB (HNSW, persistent)", "—"],
+  ["Reranker",       "FlashrankRerank (ms-marco-MultiBERT-L-12)", "—"],
+  ["LLM",            "qwen2.5:3b via Ollama", "—"],
+  ["Eval suite",     "Custom word-overlap", "v1"],
+  ["API server",     "FastAPI", "—"],
+  ["Frontend",       "React (CDN, single HTML file)", "18.3.1"],
+  ["Runtime",        "Python + Docker Compose", "3.11"],
 ];
 
 const CONFIG_DECISIONS = [
@@ -1653,12 +1464,12 @@ const CONFIG_DECISIONS = [
     rationale: "Initial dense-retrieval candidate set sent to the reranker. Increasing past 20 yields diminishing returns on recall@5 in our eval (+0.4 points at top_k=50, +0.5 at top_k=100), at material cost to rerank latency.",
   },
   {
-    key: "RERANK_TOP_N", v: "7", unit: "chunks",
-    rationale: "Final context window passed to the LLM. Empirically the best trade-off: at n=5 faithfulness drops 3pt because supporting evidence is missed; at n=10 answer relevancy drops 2pt as the model gets distracted.",
+    key: "RERANK_TOP_N", v: "10", unit: "chunks",
+    rationale: "Final context window passed to the LLM after cross-encoder reranking. With qwen2.5:3b's 32k context, n=10 lets enough supporting evidence through without overwhelming the small model. Smaller n missed multi-section answers in the LayoutLMv3 eval.",
   },
   {
-    key: "MMR_LAMBDA", v: "0.5", unit: "—",
-    rationale: "Balances pure similarity (λ=1.0) against diversity (λ=0.0). 0.5 is a deliberate compromise — surfaces complementary chunks without sacrificing the top match. Tune higher for FAQ-style corpora.",
+    key: "MMR_LAMBDA", v: "0.7", unit: "—",
+    rationale: "Balances pure similarity (λ=1.0) against diversity (λ=0.0). 0.7 leans toward similarity since the corpus is a single technical paper — diversity matters less when all chunks come from one source. Tune lower for multi-document corpora.",
   },
 ];
 
@@ -1674,8 +1485,8 @@ const ROADMAP = [
   { phase: "V2 – Q3 2026", items: [
     { t: "Hybrid retrieval",        s: "BM25 sparse + dense fusion via RRF" },
     { t: "Streaming retrieval",     s: "Emit ranked chunks as they arrive from the reranker" },
-    { t: "BYO judge",               s: "Plug Claude or local model into the RAGAS pipeline" },
-    { t: "Cost-aware routing",      s: "Route to gpt-4o-mini when confidence > threshold" },
+    { t: "Better eval metrics",     s: "Replace word-overlap with LLM-as-judge for semantic correctness" },
+    { t: "Larger LLM option",       s: "Toggle qwen2.5:7b or llama3.1:8b when GPU is available" },
   ]},
   { phase: "Graph RAG – Q4 2026", items: [
     { t: "Entity extraction",       s: "Build a knowledge graph from indexed docs at ingest time" },
@@ -1787,10 +1598,10 @@ function ArchFlow() {
         {[
           "ingest",
           "split 512/64",
-          "te-3-large",
-          "Qdrant HNSW",
-          "top_k=20 → rerank 7",
-          "gpt-4o",
+          "BAAI/bge-m3",
+          "ChromaDB",
+          "top_k=20 → rerank 10",
+          "qwen2.5:3b",
           "+ citations",
         ].map((c, i) => (
           <span key={i} className="mono">{c}</span>
@@ -1868,14 +1679,14 @@ function DocsNav({ active, onJump }) {
           Resources
         </div>
         {[
-          ["API reference",  "↗"],
-          ["GitHub repo",    "↗"],
-          ["Changelog",      "↗"],
-          ["Discord",        "↗"],
-        ].map(([l, a]) => (
-          <a key={l} href="#" style={{ display: "flex", alignItems: "center", padding: "4px 0", fontSize: 12.5, color: "var(--fg-3)", textDecoration: "none" }}>
+          ["API reference",  "https://rag.tusher16.com/docs"],
+          ["GitHub repo",    "https://github.com/tusher16/rag-studio"],
+          ["Changelog",      "https://github.com/tusher16/rag-studio/commits/main"],
+          ["LinkedIn",       "https://linkedin.com/in/tusher16"],
+        ].map(([l, href]) => (
+          <a key={l} href={href} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", padding: "4px 0", fontSize: 12.5, color: "var(--fg-3)", textDecoration: "none" }}>
             <span style={{ flex: 1 }}>{l}</span>
-            <span className="mono" style={{ color: "var(--fg-4)" }}>{a}</span>
+            <span className="mono" style={{ color: "var(--fg-4)" }}>↗</span>
           </a>
         ))}
       </div>
@@ -1928,7 +1739,7 @@ function Docs() {
               RAG Studio — Documentation
             </h1>
             <div style={{ color: "var(--fg-3)", fontSize: 13.5, marginTop: 6, maxWidth: 640, lineHeight: 1.6 }}>
-              Internal reference for the retrieval-augmented generation pipeline powering <span className="mono" style={{ color: "var(--fg-2)" }}>acme-docs</span>.
+              Internal reference for the retrieval-augmented generation pipeline powering <span className="mono" style={{ color: "var(--fg-2)" }}>rag-studio</span>.
               Covers architecture, the runtime stack, the rationale behind each config knob, V1 limitations,
               and what's on the V2 roadmap.
             </div>
@@ -1944,9 +1755,9 @@ function Docs() {
           <DocsCard id="overview" eyebrow="01" title="Overview">
             <div style={{ color: "var(--fg-2)", fontSize: 13.5, lineHeight: 1.7 }}>
               <p style={{ margin: "0 0 12px" }}>
-                RAG Studio is a single-pipeline retrieval system. Documents are pulled from GitHub, split into 512-token chunks,
-                embedded with <span className="mono" style={{ color: "var(--accent)" }}>te-3-large</span>, and stored in a Qdrant collection.
-                Queries hit dense retrieval first, then a Cohere reranker narrows to the top 7 chunks before generation.
+                RAG Studio is a single-pipeline retrieval system. PDFs are uploaded locally, split into 512-token chunks,
+                embedded with <span className="mono" style={{ color: "var(--accent)" }}>BAAI/bge-m3</span>, and stored in a ChromaDB collection.
+                Queries hit dense retrieval first, then a FlashrankRerank cross-encoder narrows to the top 10 chunks before generation with <span className="mono" style={{ color: "var(--accent)" }}>qwen2.5:3b</span> via Ollama.
               </p>
               <p style={{ margin: 0, color: "var(--fg-3)" }}>
                 The system is opinionated: one source, one chunker, one embedder, one store. V2 generalises this into a graph of stages.
@@ -1955,11 +1766,11 @@ function Docs() {
 
             <div style={{ marginTop: 16 }}>
               <CodeBlock lang="bash">{`# minimal local setup
-git clone github.com/acme/rag-studio
-cd rag-studio && uv sync
-export OPENAI_API_KEY=sk-...
-export QDRANT_URL=http://localhost:6333
-ragstudio pipeline run --pipeline product-docs`}</CodeBlock>
+git clone https://github.com/tusher16/rag-studio
+cd rag-studio
+docker compose up -d
+# Ollama must be running with qwen2.5:3b pulled
+# Upload a PDF via the UI at http://localhost:8080`}</CodeBlock>
             </div>
           </DocsCard>
 
@@ -2036,11 +1847,14 @@ chunker:
   chunk_overlap: 64
 retrieval:
   top_k: 20
-  rerank_top_n: 7
-  mmr_lambda: 0.5
+  rerank_top_n: 10
+  mmr_lambda: 0.7
 embedding:
-  model: text-embedding-3-large
-  dim: 3072`}</CodeBlock>
+  model: BAAI/bge-m3
+  dim: 1024
+llm:
+  model: qwen2.5:3b
+  provider: ollama`}</CodeBlock>
           </DocsCard>
 
           {/* Limitations */}
@@ -2106,8 +1920,8 @@ embedding:
           }}>
             <span className="mono">docs/v1 · last edited mar 12 · maintained by core-infra</span>
             <span style={{ marginLeft: "auto", display: "flex", gap: 14 }}>
-              <a href="#" style={{ color: "var(--fg-3)", textDecoration: "none" }}>Edit on GitHub ↗</a>
-              <a href="#" style={{ color: "var(--fg-3)", textDecoration: "none" }}>Report issue ↗</a>
+              <a href="https://github.com/tusher16/rag-studio" target="_blank" rel="noopener noreferrer" style={{ color: "var(--fg-3)", textDecoration: "none" }}>Edit on GitHub ↗</a>
+              <a href="https://github.com/tusher16/rag-studio/issues" target="_blank" rel="noopener noreferrer" style={{ color: "var(--fg-3)", textDecoration: "none" }}>Report issue ↗</a>
             </span>
           </div>
         </div>
